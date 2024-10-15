@@ -79,7 +79,7 @@ func (c *Coordinator) Done() bool {
 	// Your code here.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	fmt.Printf("nMapNotDone: %d, ReduceNotDone: %d\n", c.nMapNotDone, c.nReduceNotDone)
+	DPrintf("nMapNotDone: %d, ReduceNotDone: %d\n", c.nMapNotDone, c.nReduceNotDone)
 	return c.nMapNotDone == 0 && c.nReduceNotDone == 0
 }
 
@@ -113,7 +113,7 @@ func (c *Coordinator) SendTask(args *SendTaskArgs, reply *SendTaskReplys) error 
 		n := len(c.mapTasks)
 		for i := 0; i < n; i++ {
 			if c.mapTasks[i].state == NotStarted || (c.mapTasks[i].state == Executing && time.Now().Sub(c.mapTasks[i].startTime) > 10*time.Second) {
-				fmt.Printf("Send map_task[%d] to worker %d\n", i, c.workerID)
+				DPrintf("Send map_task[%d] to worker %d\n", i, c.workerID)
 				c.mapTasks[i].state = Executing
 				c.mapTasks[i].startTime = time.Now()
 				reply.NReduce = len(c.reduceTasks)
@@ -130,7 +130,7 @@ func (c *Coordinator) SendTask(args *SendTaskArgs, reply *SendTaskReplys) error 
 		n := len(c.reduceTasks)
 		for i := 0; i < n; i++ {
 			if c.reduceTasks[i].state == NotStarted || (c.reduceTasks[i].state == Executing && time.Now().Sub(c.reduceTasks[i].startTime) > 10*time.Second) {
-				fmt.Printf("Send reduce_task[%d] to worker %d\n", i, c.workerID)
+				DPrintf("Send reduce_task[%d] to worker %d\n", i, c.workerID)
 				c.reduceTasks[i].state = Executing
 				c.reduceTasks[i].startTime = time.Now()
 				reply.NMap = len(c.mapTasks)
@@ -155,13 +155,13 @@ func (c *Coordinator) DoneTask(args *DoneTaskArgs, reply *DoneTaskReplys) error 
 	if args.TaskType == MapType {
 		if c.mapTasks[args.TaskID].state != Finished {
 			c.nMapNotDone--
-			fmt.Printf("map_task[%d] done!\n", args.TaskID)
+			DPrintf("map_task[%d] done!\n", args.TaskID)
 		}
 		c.mapTasks[args.TaskID].state = Finished
 	} else if args.TaskType == ReduceType {
 		if c.reduceTasks[args.TaskID].state != Finished {
 			c.nReduceNotDone--
-			fmt.Printf("reduce_task[%d] done!\n", args.TaskID)
+			DPrintf("reduce_task[%d] done!\n", args.TaskID)
 			for i := 0; i < len(c.mapTasks); i++ {
 				filename := fmt.Sprintf("mr-%d-%d", i, args.TaskID)
 				os.Remove(filename)

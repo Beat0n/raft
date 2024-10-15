@@ -132,7 +132,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			ofile.Close()
 			go replyDone(reply.TaskID, ReduceType, reply.NMap)
 		} else if reply.TaskType == WaitType {
-			fmt.Println("wait...")
+			DPrintf("wait.../n")
 			time.Sleep(WaitDuration * time.Second)
 		} else if reply.TaskType == ExitType {
 			break
