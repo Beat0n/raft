@@ -1,11 +1,9 @@
 package mr
 
 import (
-	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/big"
 	"os"
 	"sort"
 	"time"
@@ -15,8 +13,7 @@ import "net/rpc"
 import "hash/fnv"
 
 const MaxReplyDoneTries = 4
-const WaitDurationMs = 10
-const MayCrash = false
+const WaitDuration = 1
 
 // Map functions return a slice of KeyValue.
 type KeyValue struct {
@@ -86,9 +83,6 @@ func Worker(mapf func(string, string) []KeyValue,
 				encoders[id].Encode(&kv)
 			}
 			for i := 0; i < reply.NReduce; i++ {
-				if MayCrash {
-					maybeCrash()
-				}
 				oldName := fmt.Sprintf("tmp-%d-%d", reply.WorkerID, i)
 				NewName := fmt.Sprintf("mr-%d-%d", reply.TaskID, i)
 				os.Rename(oldName, NewName)
@@ -139,7 +133,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			go replyDone(reply.TaskID, ReduceType, reply.NMap)
 		} else if reply.TaskType == WaitType {
 			fmt.Println("wait...")
-			time.Sleep(WaitDurationMs * time.Millisecond)
+			time.Sleep(WaitDuration * time.Second)
 		} else if reply.TaskType == ExitType {
 			break
 		}
@@ -205,19 +199,5 @@ func replyDone(taskID int, taskType TaskType, nMap int) {
 		if call("Coordinator.DoneTask", &args, &reply) {
 			break
 		}
-	}
-}
-
-func maybeCrash() {
-	max := big.NewInt(1000)
-	rr, _ := crand.Int(crand.Reader, max)
-	if rr.Int64() < 330 {
-		// crash!
-		os.Exit(1)
-	} else if rr.Int64() < 660 {
-		// delay for a while.
-		maxms := big.NewInt(10 * 1000)
-		ms, _ := crand.Int(crand.Reader, maxms)
-		time.Sleep(time.Duration(ms.Int64()) * time.Millisecond)
 	}
 }

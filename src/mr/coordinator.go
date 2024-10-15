@@ -77,7 +77,9 @@ func (c *Coordinator) server() {
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	// Your code here.
-	fmt.Printf("nMapNotDone: %d, nReduceNotDone: %d\n", c.nMapNotDone, c.nReduceNotDone)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	fmt.Printf("nMapNotDone: %d, ReduceNotDone: %d\n", c.nMapNotDone, c.nReduceNotDone)
 	return c.nMapNotDone == 0 && c.nReduceNotDone == 0
 }
 
@@ -153,11 +155,13 @@ func (c *Coordinator) DoneTask(args *DoneTaskArgs, reply *DoneTaskReplys) error 
 	if args.TaskType == MapType {
 		if c.mapTasks[args.TaskID].state != Finished {
 			c.nMapNotDone--
+			fmt.Printf("map_task[%d] done!\n", args.TaskID)
 		}
 		c.mapTasks[args.TaskID].state = Finished
 	} else if args.TaskType == ReduceType {
 		if c.reduceTasks[args.TaskID].state != Finished {
 			c.nReduceNotDone--
+			fmt.Printf("reduce_task[%d] done!\n", args.TaskID)
 			for i := 0; i < len(c.mapTasks); i++ {
 				filename := fmt.Sprintf("mr-%d-%d", i, args.TaskID)
 				os.Remove(filename)
