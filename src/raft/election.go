@@ -11,6 +11,9 @@ type votes struct {
 }
 
 func (rf *Raft) startElection() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	rf.resetElectionTime()
 	rf.role = Candidate
 	rf.votedFor = rf.me // Vote for self
@@ -65,7 +68,12 @@ func (rf *Raft) becomeLeader(success bool) {
 	if success {
 		DPrintf("---Term %d---%s become leader", rf.currentTerm, ServerName(rf.me, 3))
 		rf.role = Leader
-		rf.sendEntries(true)
+		go rf.sendEntries(true)
+		for server := range rf.peers {
+			rf.nextIndex[server] = rf.lastLog().Index + 1
+			rf.matchIndex[server] = 0
+		}
+		rf.nMatch = make(map[int]int)
 	} else {
 		DPrintf("---Term %d---%s Election Failed", rf.currentTerm, ServerName(rf.me, 3))
 		rf.role = Follower

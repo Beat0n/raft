@@ -79,6 +79,8 @@ type Raft struct {
 	// on leader
 	nextIndex  []int // for each server, index of the next log entry to send to that server
 	matchIndex []int // for each server, index of highest log entry known to be replicated on server
+	nMatch     map[int]int
+	applyCh    chan ApplyMsg
 }
 
 // return currentTerm and whether this server
@@ -150,13 +152,21 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if !(rf.role == Leader) {
+		return -1, -1, false
+	}
 
 	// Your code here (2B).
-
-	return index, term, isLeader
+	term := rf.currentTerm
+	index := len(rf.logs)
+	rf.logs = append(rf.logs, entry{command, term, index})
+	rf.nMatch[index] = 1
+	DPrintf("---Term %d---%s received log{command: %v, index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), command, index)
+	go rf.sendEntries(false)
+	return index, term, true
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -195,13 +205,22 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
+	rf.applyCh = applyCh
 	rf.heartBeatTime = HeartBeatTime
+	rf.logs = make([]entry, 1)
+	rf.nextIndex = make([]int, len(rf.peers))
+	for i := 0; i < len(rf.peers); i++ {
+		rf.nextIndex[i] = 1
+	}
+	rf.matchIndex = make([]int, len(rf.peers))
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
+
+	go rf.applier()
 
 	return rf
 }

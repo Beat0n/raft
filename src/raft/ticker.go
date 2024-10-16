@@ -19,10 +19,10 @@ func (rf *Raft) ticker() {
 		time.Sleep(rf.heartBeatTime)
 		rf.mu.Lock()
 		if rf.role == Leader {
-			rf.sendEntries(true)
+			go rf.sendEntries(true)
 		}
 		if time.Now().After(rf.electionTime) {
-			rf.startElection()
+			go rf.startElection()
 		}
 		rf.mu.Unlock()
 	}

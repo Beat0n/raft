@@ -21,17 +21,18 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	DPrintf("---Term %d---%s receive request vote from %s, args.Term is %d\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), args.Term)
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
-	} else if args.Term == rf.currentTerm {
-		if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
-			reply.VoteGranted = false
-		} else {
+	} else if args.Term == rf.currentTerm && (rf.votedFor != -1 && rf.votedFor != args.CandidateId) {
+		reply.VoteGranted = false
+	} else { // args.Term >= rf.currentTerm
+		lastLog := rf.lastLog()
+		// todo: check args.LastLogIndex == lastLog.Index condition
+		if args.LastLogTerm > lastLog.Term || (args.LastLogTerm == lastLog.Term && args.LastLogIndex >= lastLog.Index) { // candidate's log is at least as up-to-date as receiver's log
 			reply.VoteGranted = true
 			rf.votedFor = args.CandidateId
+			rf.currentTerm = args.Term
+		} else {
+			reply.VoteGranted = false
 		}
-	} else { // if args.Term > rf.currentTerm
-		reply.VoteGranted = true
-		rf.votedFor = args.CandidateId
-		rf.currentTerm = args.Term
 	}
 
 	if reply.VoteGranted {
