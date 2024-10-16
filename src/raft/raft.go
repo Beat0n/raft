@@ -71,6 +71,14 @@ type Raft struct {
 	role          raftRole
 	heartBeatTime time.Duration
 	electionTime  time.Time
+
+	logs []entry
+	// on all servers
+	commitIndex int // index of highest log entry known to be committed
+	lastApplied int // index of highest log entry applied to state machine
+	// on leader
+	nextIndex  []int // for each server, index of the next log entry to send to that server
+	matchIndex []int // for each server, index of highest log entry known to be replicated on server
 }
 
 // return currentTerm and whether this server

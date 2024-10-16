@@ -7,9 +7,12 @@ type entry struct {
 }
 
 type AppendEntriesArgs struct {
-	Term     int
-	LeaderId int
-	Entries  []entry
+	Term         int
+	LeaderId     int
+	PrevLogIndex int // index of log entry immediately preceding new ones
+	PrevLogTerm  int // term of prevLogIndex entry
+	Entries      []entry
+	LeaderCommit int // leader's commitIndex
 }
 
 type AppendEntriesReply struct {
