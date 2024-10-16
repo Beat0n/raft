@@ -134,7 +134,6 @@ func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, repl
 		rf.matchIndex[server] = lastIndex
 		rf.nMatch[lastIndex]++
 		N := rf.nMatch[lastIndex]
-		DPrintf("N: %d", N)
 		if N > len(rf.peers)/2 && lastIndex > rf.commitIndex && rf.logs[lastIndex].Term == rf.currentTerm {
 			rf.commitIndex = lastIndex
 		}
