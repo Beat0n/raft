@@ -18,7 +18,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	DPrintf("---Term %d---%s receive request vote from %s, args.Term is %d\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), args.Term)
+	DPrintf("---Term %d--- %s receive request vote from %s, args.Term is %d\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), args.Term)
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
 	} else if args.Term == rf.currentTerm && (rf.votedFor != -1 && rf.votedFor != args.CandidateId) {
@@ -40,7 +40,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.resetElectionTime()
 	}
 	reply.Term = rf.currentTerm
-	DPrintf("---Term %d---%s send reply for request vote to %s, reply %v\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), reply.VoteGranted)
+	DPrintf("---Term %d--- %s send reply for request vote to %s, reply %v\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), reply.VoteGranted)
 }
 
 // example code to send a RequestVote RPC to a server.

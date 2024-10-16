@@ -46,7 +46,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		}
 		if args.LeaderCommit > rf.commitIndex {
 			rf.commitIndex = min(args.LeaderCommit, rf.lastLog().Index)
-			DPrintf("---Term %d---%s update commit index to %d\n", rf.currentTerm, ServerName(rf.me, rf.role), rf.commitIndex)
+			DPrintf("---Term %d--- %s update commit index to %d\n", rf.currentTerm, ServerName(rf.me, rf.role), rf.commitIndex)
 		}
 	} else { // if args.Term < rf.currentTerm
 		// from old leader
@@ -77,7 +77,7 @@ func (rf *Raft) sendHeartBeat() {
 		if i == rf.me {
 			continue
 		}
-		DPrintf("---Term %d---%s send heartbeat to %s\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(i, 3))
+		DPrintf("---Term %d--- %s send heartbeat to %s\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(i, 3))
 		args := AppendEntriesArgs{
 			Term:         rf.currentTerm,
 			LeaderId:     rf.me,
@@ -95,7 +95,7 @@ func (rf *Raft) sendLogs() {
 			continue
 		}
 		nextIndex := rf.nextIndex[i]
-		DPrintf("---Term %d---%s send logs[%d:%d] to %s\n", rf.currentTerm, ServerName(rf.me, rf.role), nextIndex, len(rf.logs)-1, ServerName(i, 3))
+		DPrintf("---Term %d--- %s send logs[%d:%d] to %s\n", rf.currentTerm, ServerName(rf.me, rf.role), nextIndex, len(rf.logs)-1, ServerName(i, 3))
 		args := AppendEntriesArgs{
 			Term:         rf.currentTerm,
 			LeaderId:     rf.me,
@@ -128,7 +128,7 @@ func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, repl
 		rf.nextIndex[server]--
 		// todo: check if retry immediately
 	} else {
-		DPrintf("---Term %d---%s send logs success\n", rf.currentTerm, ServerName(rf.me, rf.role))
+		DPrintf("---Term %d--- %s send logs success\n", rf.currentTerm, ServerName(rf.me, rf.role))
 		lastIndex := rf.lastLog().Index
 		rf.nextIndex[server] = lastIndex + 1
 		rf.matchIndex[server] = lastIndex
@@ -147,7 +147,7 @@ func (rf *Raft) applier() {
 		rf.mu.Lock()
 		for rf.lastApplied < rf.commitIndex {
 			rf.lastApplied++
-			DPrintf("---Term %d---%s apply log[%d], command is %v\n", rf.currentTerm, ServerName(rf.me, rf.role), rf.lastApplied, rf.logs[rf.lastApplied].Command)
+			DPrintf("---Term %d--- %s apply log[%d], command is %v\n", rf.currentTerm, ServerName(rf.me, rf.role), rf.lastApplied, rf.logs[rf.lastApplied].Command)
 			rf.applyCh <- ApplyMsg{
 				CommandValid:  true,
 				Command:       rf.logs[rf.lastApplied].Command,

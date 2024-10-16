@@ -66,7 +66,7 @@ func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVote
 func (rf *Raft) becomeLeader(success bool) {
 	rf.votedFor = -1
 	if success {
-		DPrintf("---Term %d---%s become leader", rf.currentTerm, ServerName(rf.me, 3))
+		DPrintf("---Term %d--- %s become leader", rf.currentTerm, ServerName(rf.me, 3))
 		rf.role = Leader
 		go rf.sendEntries(true)
 		for server := range rf.peers {
@@ -75,7 +75,7 @@ func (rf *Raft) becomeLeader(success bool) {
 		}
 		rf.nMatch = make(map[int]int)
 	} else {
-		DPrintf("---Term %d---%s Election Failed", rf.currentTerm, ServerName(rf.me, 3))
+		DPrintf("---Term %d--- %s Election Failed", rf.currentTerm, ServerName(rf.me, 3))
 		rf.role = Follower
 	}
 }
