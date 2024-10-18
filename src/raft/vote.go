@@ -14,6 +14,30 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
+//func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+//	// Your code here (2A, 2B).
+//	rf.mu.Lock()
+//	defer rf.mu.Unlock()
+//	DPrintf("---Term %d--- %s receive request vote from %s, args.Term is %d\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), args.Term)
+//
+//	if args.Term < rf.currentTerm {
+//		reply.Term = rf.currentTerm
+//		reply.VoteGranted = false
+//		return
+//	}
+//	if args.Term > rf.currentTerm {
+//		rf.currentTerm = args.Term
+//	}
+//
+//	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.checkUp2Date(args) {
+//		rf.grantVote(args, reply)
+//	} else {
+//		reply.VoteGranted = false
+//	}
+//	reply.Term = rf.currentTerm
+//	DPrintf2(rf, "send reply for request vote to %s, reply %v\n", ServerName(args.CandidateId, Candidate), reply.VoteGranted)
+//}
+
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
@@ -21,12 +45,13 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	DPrintf("---Term %d--- %s receive request vote from %s, args.Term is %d\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), args.Term)
 	reply.VoteGranted = false
 	if args.Term < rf.currentTerm {
-
-	} else if args.Term == rf.currentTerm {
-		if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.checkUp2Date(args) {
-			rf.grantVote(args, reply)
-		}
-	} else { // args.Term > rf.currentTerm
+		reply.Term = rf.currentTerm
+		return
+	}
+	if args.Term > rf.currentTerm {
+		rf.setNewTerm(args.Term)
+	}
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.checkUp2Date(args) {
 		rf.grantVote(args, reply)
 	}
 
@@ -67,7 +92,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return ok
 }
 
-// todo: check args.LastLogIndex == lastLog.Index condition
 // Check candidate's log is at least as up-to-date as receiver's log
 func (rf *Raft) checkUp2Date(args *RequestVoteArgs) bool {
 	myLastLog := rf.lastLog()
