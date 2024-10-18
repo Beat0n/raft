@@ -22,7 +22,7 @@ func (rf *Raft) ticker() {
 			go rf.sendEntries(true)
 		}
 		if time.Now().After(rf.electionTime) {
-			go rf.startElection()
+			rf.startElection()
 		}
 		rf.mu.Unlock()
 	}

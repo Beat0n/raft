@@ -7,9 +7,6 @@ type votes struct {
 }
 
 func (rf *Raft) startElection() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	rf.resetElectionTime()
 	rf.role = Candidate
 	rf.votedFor = rf.me // Vote for self
@@ -28,6 +25,7 @@ func (rf *Raft) startElection() {
 		LastLogIndex: lastLog.Index,
 		LastLogTerm:  lastLog.Term,
 	}
+	DPrintf2(rf, "start election")
 	// Send RequestVote RPCs to all other servers
 	for server := range rf.peers {
 		if server == rf.me {
@@ -39,25 +37,24 @@ func (rf *Raft) startElection() {
 }
 
 func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVoteReply, summer *votes) {
+	DPrintf2(rf, "send to request_vote to server %d", server)
 	ok := rf.sendRequestVote(server, args, reply)
 	// handle reply sequentially
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	if summer.done {
+	if summer.done || !ok || reply.Term < rf.currentTerm {
 		return
 	}
 	if reply.Term > rf.currentTerm {
 		rf.setNewTerm(reply.Term)
-		DPrintf("---Term %d--- %s Election Failed", rf.currentTerm, ServerName(rf.me, 3))
 		summer.done = true
 		return
 	}
 	n := len(rf.peers)
-	if ok && reply.VoteGranted {
+	if reply.VoteGranted {
 		summer.agree++
 		// If votes received from the majority of servers: become leader
-		if summer.agree > (n / 2) {
-			DPrintf("---Term %d--- %s handle election vote from {Server %d}", rf.currentTerm, ServerName(rf.me, rf.role), server)
+		if summer.agree > (n/2) && rf.currentTerm == args.Term && rf.role == Candidate {
 			rf.becomeLeader()
 			summer.done = true
 		}
@@ -65,7 +62,7 @@ func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVote
 	}
 	summer.disagree++
 	if summer.disagree > (n / 2) {
-		DPrintf("---Term %d--- %s handle election vote from {Server %d}", rf.currentTerm, ServerName(rf.me, rf.role), server)
+		DPrintf2(rf, "election failed")
 		rf.votedFor = -1
 		rf.role = Follower
 		summer.done = true
@@ -73,7 +70,7 @@ func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVote
 }
 
 func (rf *Raft) becomeLeader() {
-	DPrintf("---Term %d--- %s become leader", rf.currentTerm, ServerName(rf.me, 3))
+	DPrintf2(rf, "become leader")
 	rf.role = Leader
 	rf.votedFor = -1
 	rf.nMatch = make(map[int]int)

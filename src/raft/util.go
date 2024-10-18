@@ -19,6 +19,13 @@ func DPrintf(format string, a ...interface{}) {
 	return
 }
 
+func DPrintf2(rf *Raft, format string, a ...interface{}) {
+	if Debug {
+		log.Printf("---Term %d--- %s %s", rf.currentTerm, ServerName(rf.me, rf.role), fmt.Sprintf(format, a...))
+	}
+	return
+}
+
 func ServerName(server int, role raftRole) string {
 	switch role {
 	case Follower:
