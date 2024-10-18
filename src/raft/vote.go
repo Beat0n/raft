@@ -87,7 +87,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	DPrintf("---Term %d--- %s send request vote to %s", args.Term, ServerName(rf.me, rf.role), ServerName(server, 3))
+	DPrintf("---Term %d--- %s send request_vote to %s", args.Term, ServerName(rf.me, rf.role), ServerName(server, 3))
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
 }

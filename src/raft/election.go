@@ -37,7 +37,6 @@ func (rf *Raft) startElection() {
 }
 
 func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVoteReply, summer *votes) {
-	DPrintf2(rf, "send to request_vote to server %d", server)
 	ok := rf.sendRequestVote(server, args, reply)
 	// handle reply sequentially
 	rf.mu.Lock()

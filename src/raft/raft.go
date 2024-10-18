@@ -162,9 +162,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	term := rf.currentTerm
 	index := len(rf.logs)
+	DPrintf("---Term %d--- %s append log{command: %v, index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), command, index)
 	rf.logs = append(rf.logs, entry{command, term, index})
 	rf.nMatch[index] = 1
-	DPrintf("---Term %d--- %s append log{command: %v, index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), command, index)
 	go rf.sendEntries(false)
 	return index, term, true
 }
