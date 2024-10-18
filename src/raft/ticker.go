@@ -6,7 +6,7 @@ import (
 )
 
 const ElectionTimeout = 150
-const HeartBeatTime = 50 * time.Millisecond
+const HeartBeatTime = 100 * time.Millisecond
 
 // The ticker go routine starts a new election if this peer hasn't received
 // heartsbeats recently.

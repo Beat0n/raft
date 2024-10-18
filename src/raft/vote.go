@@ -19,26 +19,17 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	DPrintf("---Term %d--- %s receive request vote from %s, args.Term is %d\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), args.Term)
+	reply.VoteGranted = false
 	if args.Term < rf.currentTerm {
-		reply.VoteGranted = false
-	} else if args.Term == rf.currentTerm && (rf.votedFor != -1 && rf.votedFor != args.CandidateId) {
-		reply.VoteGranted = false
-	} else { // args.Term >= rf.currentTerm
-		lastLog := rf.lastLog()
-		// todo: check args.LastLogIndex == lastLog.Index condition
-		if args.LastLogTerm > lastLog.Term || (args.LastLogTerm == lastLog.Term && args.LastLogIndex >= lastLog.Index) { // candidate's log is at least as up-to-date as receiver's log
-			reply.VoteGranted = true
-			rf.votedFor = args.CandidateId
-			rf.currentTerm = args.Term
-		} else {
-			reply.VoteGranted = false
+
+	} else if args.Term == rf.currentTerm {
+		if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.checkUp2Date(args) {
+			rf.grantVote(args, reply)
 		}
+	} else { // args.Term > rf.currentTerm
+		rf.grantVote(args, reply)
 	}
 
-	if reply.VoteGranted {
-		rf.role = Follower
-		rf.resetElectionTime()
-	}
 	reply.Term = rf.currentTerm
 	DPrintf("---Term %d--- %s send reply for request vote to %s, reply %v\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), reply.VoteGranted)
 }
@@ -61,7 +52,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // can't be reached, a lost request, or a lost reply.
 //
 // Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
+// handler function on the server side does not return. Thus there
 // is no need to implement your own timeouts around Call().
 //
 // look at the comments in ../labrpc/labrpc.go for more details.
@@ -74,4 +65,19 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	DPrintf("---Term %d--- %s send request vote to %s", args.Term, ServerName(rf.me, rf.role), ServerName(server, 3))
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
+}
+
+// todo: check args.LastLogIndex == lastLog.Index condition
+// Check candidate's log is at least as up-to-date as receiver's log
+func (rf *Raft) checkUp2Date(args *RequestVoteArgs) bool {
+	myLastLog := rf.lastLog()
+	return args.LastLogTerm > myLastLog.Term || (args.LastLogTerm == myLastLog.Term && args.LastLogIndex >= myLastLog.Index)
+}
+
+func (rf *Raft) grantVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	reply.VoteGranted = true
+	rf.votedFor = args.CandidateId
+	rf.role = Follower
+	rf.currentTerm = args.Term
+	rf.resetElectionTime()
 }

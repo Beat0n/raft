@@ -5,6 +5,10 @@ import (
 	"log"
 )
 
+func init() {
+	log.SetFlags(log.Lmicroseconds)
+}
+
 // Debugging
 const Debug = true
 

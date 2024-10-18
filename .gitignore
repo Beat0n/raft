@@ -3,3 +3,8 @@ api.key
 .api.key.trimmed
 *-handin.tar.gz
 src/main/mr-out-*
+.idea
+src/raft/tester
+src/raft/test-*.log
+src/raft/test-*.err
+src/raft/*.txt

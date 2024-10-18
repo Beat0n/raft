@@ -73,6 +73,7 @@ func (rf *Raft) sendEntries(isHeartBeat bool) {
 }
 
 func (rf *Raft) sendHeartBeat() {
+	done := false
 	for i := range rf.peers {
 		if i == rf.me {
 			continue
@@ -85,11 +86,12 @@ func (rf *Raft) sendHeartBeat() {
 			LeaderCommit: rf.commitIndex,
 		}
 		reply := AppendEntriesReply{}
-		go rf.sendAppendEntries(i, &args, &reply)
+		go rf.handleAppendEntryReply(i, &args, &reply, &done)
 	}
 }
 
 func (rf *Raft) sendLogs() {
+	done := false
 	for i := range rf.peers {
 		if i == rf.me {
 			continue
@@ -105,7 +107,7 @@ func (rf *Raft) sendLogs() {
 			LeaderCommit: rf.commitIndex,
 		}
 		reply := AppendEntriesReply{}
-		go rf.handleAppendEntryReply(i, &args, &reply)
+		go rf.handleAppendEntryReply(i, &args, &reply, &done)
 	}
 }
 
@@ -113,15 +115,20 @@ func (rf *Raft) lastLog() *entry {
 	return &rf.logs[len(rf.logs)-1]
 }
 
-func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
+func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, reply *AppendEntriesReply, done *bool) {
 	for ok := false; !ok; {
 		ok = rf.sendAppendEntries(server, args, reply)
 	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	if *done {
+		return
+	}
+
 	if reply.Term > rf.currentTerm {
 		rf.setNewTerm(args.Term)
+		*done = true
 		return
 	}
 	if !reply.Success {

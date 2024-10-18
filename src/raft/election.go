@@ -1,13 +1,9 @@
 package raft
 
-import (
-	"sync"
-)
-
 type votes struct {
 	agree    int
 	disagree int
-	once     sync.Once // do becomeLeader once
+	done     bool
 }
 
 func (rf *Raft) startElection() {
@@ -19,15 +15,18 @@ func (rf *Raft) startElection() {
 	rf.votedFor = rf.me // Vote for self
 	rf.currentTerm++    // Increment currentTerm
 
-	summer := votes{}
+	summer := new(votes)
 	summer.agree = 1
 	summer.disagree = 0
+	summer.done = false
+
+	lastLog := rf.lastLog()
 
 	args := RequestVoteArgs{
 		Term:         rf.currentTerm,
 		CandidateId:  rf.me,
-		LastLogIndex: 0,
-		LastLogTerm:  0,
+		LastLogIndex: lastLog.Index,
+		LastLogTerm:  lastLog.Term,
 	}
 	// Send RequestVote RPCs to all other servers
 	for server := range rf.peers {
@@ -35,7 +34,7 @@ func (rf *Raft) startElection() {
 			continue
 		}
 		reply := RequestVoteReply{}
-		go rf.handleVote(server, &args, &reply, &summer)
+		go rf.handleVote(server, &args, &reply, summer)
 	}
 }
 
@@ -44,38 +43,43 @@ func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVote
 	// handle reply sequentially
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	if summer.done {
+		return
+	}
+	if reply.Term > rf.currentTerm {
+		rf.setNewTerm(reply.Term)
+		DPrintf("---Term %d--- %s Election Failed", rf.currentTerm, ServerName(rf.me, 3))
+		summer.done = true
+		return
+	}
 	n := len(rf.peers)
 	if ok && reply.VoteGranted {
 		summer.agree++
-		// If votes received from majority of servers: become leader
+		// If votes received from the majority of servers: become leader
 		if summer.agree > (n / 2) {
-			summer.once.Do(func() {
-				rf.becomeLeader(true)
-			})
+			DPrintf("---Term %d--- %s handle election vote from {Server %d}", rf.currentTerm, ServerName(rf.me, rf.role), server)
+			rf.becomeLeader()
+			summer.done = true
 		}
 		return
 	}
 	summer.disagree++
-	if reply.Term > rf.currentTerm || summer.disagree > (n/2) {
-		summer.once.Do(func() {
-			rf.becomeLeader(false)
-		})
+	if summer.disagree > (n / 2) {
+		DPrintf("---Term %d--- %s handle election vote from {Server %d}", rf.currentTerm, ServerName(rf.me, rf.role), server)
+		rf.votedFor = -1
+		rf.role = Follower
+		summer.done = true
 	}
 }
 
-func (rf *Raft) becomeLeader(success bool) {
+func (rf *Raft) becomeLeader() {
+	DPrintf("---Term %d--- %s become leader", rf.currentTerm, ServerName(rf.me, 3))
+	rf.role = Leader
 	rf.votedFor = -1
-	if success {
-		DPrintf("---Term %d--- %s become leader", rf.currentTerm, ServerName(rf.me, 3))
-		rf.role = Leader
-		go rf.sendEntries(true)
-		for server := range rf.peers {
-			rf.nextIndex[server] = rf.lastLog().Index + 1
-			rf.matchIndex[server] = 0
-		}
-		rf.nMatch = make(map[int]int)
-	} else {
-		DPrintf("---Term %d--- %s Election Failed", rf.currentTerm, ServerName(rf.me, 3))
-		rf.role = Follower
+	rf.nMatch = make(map[int]int)
+	go rf.sendEntries(true)
+	for server := range rf.peers {
+		rf.nextIndex[server] = rf.lastLog().Index + 1
+		rf.matchIndex[server] = 0
 	}
 }
