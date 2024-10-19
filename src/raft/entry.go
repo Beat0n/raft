@@ -213,7 +213,4 @@ func (rf *Raft) appendNoOpLog() {
 	DPrintf("---Term %d--- %s append noop log{index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), index)
 	rf.logs = append(rf.logs, entry{nil, term, index})
 	rf.nMatch[index] = 1
-	if rf.curLogStart == -1 {
-		rf.curLogStart = index
-	}
 }
