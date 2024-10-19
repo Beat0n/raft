@@ -165,7 +165,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	DPrintf("---Term %d--- %s append log{command: %v, index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), command, index)
 	rf.logs = append(rf.logs, entry{command, term, index})
 	rf.nMatch[index] = 1
-	go rf.sendEntries(false)
+	rf.sendEntries(false)
 	return index, term, true
 }
 

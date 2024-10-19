@@ -75,9 +75,9 @@ func (rf *Raft) checkUp2Date(args *RequestVoteArgs) bool {
 }
 
 func (rf *Raft) grantVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.resetElectionTime()
 	reply.VoteGranted = true
 	rf.votedFor = args.CandidateId
 	rf.role = Follower
 	rf.currentTerm = args.Term
-	rf.resetElectionTime()
 }

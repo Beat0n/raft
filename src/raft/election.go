@@ -74,9 +74,10 @@ func (rf *Raft) becomeLeader() {
 	DPrintf2(rf, "become leader")
 	rf.role = Leader
 	rf.nMatch = make(map[int]int)
-	go rf.sendEntries(true)
 	for server := range rf.peers {
 		rf.nextIndex[server] = rf.lastLog().Index + 1
 		rf.matchIndex[server] = 0
 	}
+	//rf.appendNoOpLog()
+	rf.sendEntries(false)
 }
