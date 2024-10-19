@@ -14,30 +14,6 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
-//func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-//	// Your code here (2A, 2B).
-//	rf.mu.Lock()
-//	defer rf.mu.Unlock()
-//	DPrintf("---Term %d--- %s receive request vote from %s, args.Term is %d\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), args.Term)
-//
-//	if args.Term < rf.currentTerm {
-//		reply.Term = rf.currentTerm
-//		reply.VoteGranted = false
-//		return
-//	}
-//	if args.Term > rf.currentTerm {
-//		rf.currentTerm = args.Term
-//	}
-//
-//	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.checkUp2Date(args) {
-//		rf.grantVote(args, reply)
-//	} else {
-//		reply.VoteGranted = false
-//	}
-//	reply.Term = rf.currentTerm
-//	DPrintf2(rf, "send reply for request vote to %s, reply %v\n", ServerName(args.CandidateId, Candidate), reply.VoteGranted)
-//}
-
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
@@ -99,9 +75,9 @@ func (rf *Raft) checkUp2Date(args *RequestVoteArgs) bool {
 }
 
 func (rf *Raft) grantVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.resetElectionTime()
 	reply.VoteGranted = true
 	rf.votedFor = args.CandidateId
 	rf.role = Follower
 	rf.currentTerm = args.Term
-	rf.resetElectionTime()
 }

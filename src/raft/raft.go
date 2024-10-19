@@ -169,7 +169,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	if rf.curLogStart == -1 {
 		rf.curLogStart = index
 	}
-	go rf.sendEntries(false)
+	rf.sendEntries(false)
 	return index, term, true
 }
 

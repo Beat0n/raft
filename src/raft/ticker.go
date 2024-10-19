@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const ElectionTimeout = 150
+const ElectionTimeout = 200
 const HeartBeatTime = 100 * time.Millisecond
 
 // The ticker go routine starts a new election if this peer hasn't received
@@ -19,7 +19,7 @@ func (rf *Raft) ticker() {
 		time.Sleep(rf.heartBeatTime)
 		rf.mu.Lock()
 		if rf.role == Leader {
-			go rf.sendEntries(false)
+			rf.sendEntries(false)
 		}
 		if time.Now().After(rf.electionTime) {
 			rf.startElection()

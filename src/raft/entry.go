@@ -51,7 +51,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.Term >= rf.currentTerm {
 		rf.resetElectionTime()
-		rf.setNewTerm(args.Term)
+		if args.Term > rf.currentTerm {
+			rf.setNewTerm(args.Term)
+		} else {
+			rf.role = Follower
+		}
 		if len(rf.logs) <= args.PrevLogIndex || rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
 			reply.Success = false
 		} else {
@@ -75,56 +79,37 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 }
 
 func (rf *Raft) sendEntries(isHeartBeat bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
 	rf.resetElectionTime()
 	for server := range rf.peers {
 		if server == rf.me {
 			continue
 		}
-		if isHeartBeat {
-			rf.sendHeartBeat(server)
-		} else {
-			rf.sendLogs(server)
+		done := false
+		nextIndex := rf.nextIndex[server]
+		var entries []entry
+		if !isHeartBeat {
+			lastLogIndex := rf.lastLog().Index
+			entries = make([]entry, lastLogIndex-nextIndex+1)
+			copy(entries, rf.logs[nextIndex:])
 		}
+		args := AppendEntriesArgs{
+			Term:         rf.currentTerm,
+			LeaderId:     rf.me,
+			PrevLogIndex: rf.logs[nextIndex-1].Index,
+			PrevLogTerm:  rf.logs[nextIndex-1].Term,
+			Entries:      entries,
+			LeaderCommit: rf.commitIndex,
+		}
+		if isHeartBeat {
+			DPrintf2(rf, "send heartbeat to %s\n", ServerName(server, 3))
+		} else if len(args.Entries) == 0 {
+			DPrintf2(rf, "send empty logs to %s\n", ServerName(server, 3))
+		} else {
+			DPrintf2(rf, "send logs[%d:%d] to %s\n", nextIndex, len(rf.logs)-1, ServerName(server, 3))
+		}
+		reply := AppendEntriesReply{}
+		go rf.handleAppendEntryReply(server, &args, &reply, &done)
 	}
-}
-
-func (rf *Raft) sendHeartBeat(server int) {
-	DPrintf2(rf, "send heartbeat to %s\n", ServerName(server, 3))
-	done := false
-	nextIndex := rf.nextIndex[server]
-	args := AppendEntriesArgs{
-		Term:         rf.currentTerm,
-		LeaderId:     rf.me,
-		PrevLogIndex: rf.logs[nextIndex-1].Index,
-		PrevLogTerm:  rf.logs[nextIndex-1].Term,
-		Entries:      nil,
-		LeaderCommit: rf.commitIndex,
-	}
-	reply := AppendEntriesReply{}
-	go rf.handleAppendEntryReply(server, &args, &reply, &done)
-}
-
-func (rf *Raft) sendLogs(server int) {
-	done := false
-	nextIndex := rf.nextIndex[server]
-	args := AppendEntriesArgs{
-		Term:         rf.currentTerm,
-		LeaderId:     rf.me,
-		PrevLogIndex: rf.logs[nextIndex-1].Index,
-		PrevLogTerm:  rf.logs[nextIndex-1].Term,
-		Entries:      rf.logs[nextIndex:],
-		LeaderCommit: rf.commitIndex,
-	}
-	if len(args.Entries) == 0 {
-		DPrintf2(rf, "send empty logs to %s\n", ServerName(server, 3))
-	} else {
-		DPrintf2(rf, "send logs[%d:%d] to %s\n", nextIndex, len(rf.logs)-1, ServerName(server, 3))
-	}
-	reply := AppendEntriesReply{}
-	go rf.handleAppendEntryReply(server, &args, &reply, &done)
 }
 
 func (rf *Raft) lastLog() *entry {
@@ -201,6 +186,10 @@ func (rf *Raft) applier() {
 		rf.mu.Lock()
 		for rf.lastApplied < rf.commitIndex {
 			rf.lastApplied++
+			// ignore no-op log
+			//if rf.logs[rf.lastApplied].Command == nil {
+			//	continue
+			//}
 			DPrintf2(rf, "apply log[%d], command is %v\n", rf.lastApplied, rf.logs[rf.lastApplied].Command)
 			rf.applyCh <- ApplyMsg{
 				CommandValid:  true,
@@ -213,5 +202,18 @@ func (rf *Raft) applier() {
 			}
 		}
 		rf.mu.Unlock()
+	}
+}
+
+// Automatically append a noop log when become Leader
+// without lock
+func (rf *Raft) appendNoOpLog() {
+	term := rf.currentTerm
+	index := len(rf.logs)
+	DPrintf("---Term %d--- %s append noop log{index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), index)
+	rf.logs = append(rf.logs, entry{nil, term, index})
+	rf.nMatch[index] = 1
+	if rf.curLogStart == -1 {
+		rf.curLogStart = index
 	}
 }
