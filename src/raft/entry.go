@@ -51,7 +51,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.Term >= rf.currentTerm {
 		rf.resetElectionTime()
-		rf.setNewTerm(args.Term)
+		if args.Term > rf.currentTerm {
+			rf.setNewTerm(args.Term)
+		} else {
+			rf.role = Follower
+		}
 		if len(rf.logs) <= args.PrevLogIndex || rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
 			reply.Success = false
 		} else {
