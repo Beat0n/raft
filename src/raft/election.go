@@ -37,11 +37,13 @@ func (rf *Raft) startElection() {
 }
 
 func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVoteReply, summer *votes) {
-	ok := rf.sendRequestVote(server, args, reply)
+	if !rf.sendRequestVote(server, args, reply) {
+		return
+	}
 	// handle reply sequentially
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	if summer.done || !ok || reply.Term < rf.currentTerm {
+	if summer.done || reply.Term < rf.currentTerm {
 		return
 	}
 	if reply.Term > rf.currentTerm {
@@ -71,8 +73,8 @@ func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVote
 func (rf *Raft) becomeLeader() {
 	DPrintf2(rf, "become leader")
 	rf.role = Leader
-	rf.votedFor = -1
 	rf.nMatch = make(map[int]int)
+	rf.curLogStart = -1
 	go rf.sendEntries(true)
 	for server := range rf.peers {
 		rf.nextIndex[server] = rf.lastLog().Index + 1

@@ -77,10 +77,11 @@ type Raft struct {
 	commitIndex int // index of highest log entry known to be committed
 	lastApplied int // index of highest log entry applied to state machine
 	// on leader
-	nextIndex  []int // for each server, index of the next log entry to send to that server
-	matchIndex []int // for each server, index of highest log entry known to be replicated on server
-	nMatch     map[int]int
-	applyCh    chan ApplyMsg
+	nextIndex   []int // for each server, index of the next log entry to send to that server
+	matchIndex  []int // for each server, index of highest log entry known to be replicated on server
+	nMatch      map[int]int
+	applyCh     chan ApplyMsg
+	curLogStart int // for each server, log start index in current term
 }
 
 // return currentTerm and whether this server
@@ -165,6 +166,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	DPrintf("---Term %d--- %s append log{command: %v, index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), command, index)
 	rf.logs = append(rf.logs, entry{command, term, index})
 	rf.nMatch[index] = 1
+	if rf.curLogStart == -1 {
+		rf.curLogStart = index
+	}
 	go rf.sendEntries(false)
 	return index, term, true
 }
@@ -213,6 +217,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		rf.nextIndex[i] = 1
 	}
 	rf.matchIndex = make([]int, len(rf.peers))
+	rf.curLogStart = -1
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
