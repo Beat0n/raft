@@ -61,8 +61,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		}
 		if len(rf.logs) <= args.PrevLogIndex {
 			reply.Success = false
+			reply.XTerm = -1
+			reply.XLen = len(rf.logs)
 		} else if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
 			reply.Success = false
+			reply.XTerm = rf.logs[args.PrevLogIndex].Term
+			reply.XIndex = rf.findFirstLogByTerm(rf.logs[args.PrevLogIndex].Term)
 			rf.logs = rf.logs[:args.PrevLogIndex]
 		} else {
 			reply.Success = true
@@ -144,7 +148,7 @@ func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, repl
 		// send heartbeat
 		if !reply.Success {
 			DPrintf2(rf, "send heartbeat to %s receive failure", ServerName(server, 3))
-			rf.nextIndex[server]--
+			rf.backup(server, args, reply)
 		} else {
 			DPrintf2(rf, "send heartbeat to %s receive success", ServerName(server, 3))
 		}
@@ -152,7 +156,7 @@ func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, repl
 		// send logs
 		if !reply.Success {
 			DPrintf2(rf, "send logs to %s receive failure", ServerName(server, 3))
-			rf.nextIndex[server]--
+			rf.backup(server, args, reply)
 		} else {
 			DPrintf2(rf, "send logs to %s receive success", ServerName(server, 3))
 			matchIndex := args.PrevLogIndex + len(args.Entries)
@@ -206,4 +210,34 @@ func (rf *Raft) appendNoOpLog() {
 	DPrintf("---Term %d--- %s append noop log{index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), index)
 	rf.logs = append(rf.logs, entry{nil, term, index})
 	rf.nMatch[index] = 1
+}
+
+// Leader fast backup when ApependEntries to server failed
+func (rf *Raft) backup(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	if args.PrevLogIndex == rf.nextIndex[server]-1 {
+		//rf.nextIndex[server]--
+		if reply.XTerm == -1 {
+			rf.nextIndex[server] = reply.XLen
+		} else {
+			rf.nextIndex[server] = rf.findFirstLogByTerm(reply.XTerm)
+		}
+	}
+}
+
+func (rf *Raft) findFirstLogByTerm(term int) int {
+	left := 0
+	right := len(rf.logs) - 1
+	target := -1
+	for left <= right {
+		mid := (left + right) / 2
+		if rf.logs[mid].Term >= term {
+			right = mid - 1
+			if rf.logs[mid].Term == term {
+				target = mid
+			}
+		} else {
+			left = mid + 1
+		}
+	}
+	return target
 }
