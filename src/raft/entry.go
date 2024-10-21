@@ -44,6 +44,7 @@ func (rf *Raft) appendLogs(args *AppendEntriesArgs) {
 	if j < len(args.Entries) {
 		rf.logs = append(rf.logs, args.Entries[j:]...)
 	}
+	rf.persist()
 	DPrintf2(rf, "length: %d, logs: %v", len(rf.logs), rf.logs)
 }
 
@@ -227,7 +228,7 @@ func (rf *Raft) backup(server int, args *AppendEntriesArgs, reply *AppendEntries
 func (rf *Raft) findFirstLogByTerm(term int) int {
 	left := 0
 	right := len(rf.logs) - 1
-	target := -1
+	target := 1
 	for left <= right {
 		mid := (left + right) / 2
 		if rf.logs[mid].Term >= term {

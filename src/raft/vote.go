@@ -80,4 +80,5 @@ func (rf *Raft) grantVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.votedFor = args.CandidateId
 	rf.role = Follower
 	rf.currentTerm = args.Term
+	rf.persist()
 }

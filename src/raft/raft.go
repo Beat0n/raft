@@ -18,6 +18,8 @@ package raft
 //
 
 import (
+	"6.5840/labgob"
+	"bytes"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -101,13 +103,13 @@ func (rf *Raft) GetState() (int, bool) {
 // (or nil if there's not yet a snapshot).
 func (rf *Raft) persist() {
 	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.logs)
+	raftState := w.Bytes()
+	rf.persister.Save(raftState, nil)
 }
 
 // restore previously persisted state.
@@ -116,18 +118,19 @@ func (rf *Raft) readPersist(data []byte) {
 		return
 	}
 	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var votedFor int
+	var term int
+	var logs []entry
+	if d.Decode(&votedFor) != nil || d.Decode(&term) != nil || d.Decode(&logs) != nil {
+		panic("read persist fail")
+	} else {
+		rf.votedFor = votedFor
+		rf.currentTerm = term
+		rf.logs = logs
+	}
+	DPrintf2(rf, "recovered")
 }
 
 // the service says it has created a snapshot that has
@@ -165,6 +168,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	DPrintf("---Term %d--- %s append log{command: %v, index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), command, index)
 	rf.logs = append(rf.logs, entry{command, term, index})
 	rf.nMatch[index] = 1
+	rf.persist()
 	rf.sendEntries(false)
 	return index, term, true
 }
@@ -229,4 +233,5 @@ func (rf *Raft) setNewTerm(term int) {
 	rf.currentTerm = term
 	rf.votedFor = -1
 	rf.role = Follower
+	rf.persist()
 }
