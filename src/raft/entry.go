@@ -56,8 +56,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		} else {
 			rf.role = Follower
 		}
-		if len(rf.logs) <= args.PrevLogIndex || rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
+		if len(rf.logs) <= args.PrevLogIndex {
 			reply.Success = false
+		} else if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
+			reply.Success = false
+			rf.logs = rf.logs[:args.PrevLogIndex]
 		} else {
 			reply.Success = true
 			rf.appendLogs(args)
@@ -134,10 +137,11 @@ func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, repl
 	if args.Term != rf.currentTerm {
 		return
 	}
-	if args.Entries == nil {
+	if len(args.Entries) == 0 {
 		// send heartbeat
 		if !reply.Success {
 			DPrintf2(rf, "send heartbeat to %s receive failure", ServerName(server, 3))
+			rf.nextIndex[server]--
 		} else {
 			DPrintf2(rf, "send heartbeat to %s receive success", ServerName(server, 3))
 		}
@@ -145,34 +149,20 @@ func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, repl
 		// send logs
 		if !reply.Success {
 			DPrintf2(rf, "send logs to %s receive failure", ServerName(server, 3))
-			prevIndex := args.PrevLogIndex
-			if rf.nextIndex[server] > prevIndex {
-				rf.nextIndex[server]--
-				// todo: if retry immediately?
-				//go func(done *bool) {
-				//	rf.handleAppendEntryReply(server, args, reply, done)
-				//}(done)
-			}
+			rf.nextIndex[server]--
 		} else {
-			empty := len(args.Entries) == 0
-			var str string = ""
-			if empty {
-				str = "empty "
-			}
-			DPrintf2(rf, "send %slogs to %s receive success", str, ServerName(server, 3))
-			if !empty {
-				matchIndex := args.PrevLogIndex + len(args.Entries)
-				nextIndex := matchIndex + 1
-				if matchIndex > rf.matchIndex[server] {
-					rf.matchIndex[server] = matchIndex
-					rf.nextIndex[server] = nextIndex
-					rf.nMatch[matchIndex]++
-					//todo: 不能提交之前任期内的日志
-					N := rf.nMatch[matchIndex]
-					DPrintf2(rf, "Index: %d, N: %d", matchIndex, N)
-					if N > len(rf.peers)/2 && matchIndex > rf.commitIndex && rf.logs[matchIndex].Term == rf.currentTerm {
-						rf.commitIndex = matchIndex
-					}
+			DPrintf2(rf, "send logs to %s receive success", ServerName(server, 3))
+			matchIndex := args.PrevLogIndex + len(args.Entries)
+			nextIndex := matchIndex + 1
+			if matchIndex > rf.matchIndex[server] {
+				rf.matchIndex[server] = matchIndex
+				rf.nextIndex[server] = nextIndex
+				rf.nMatch[matchIndex]++
+				//todo: 不能提交之前任期内的日志
+				N := rf.nMatch[matchIndex]
+				DPrintf2(rf, "Index: %d, N: %d", matchIndex, N)
+				if N > len(rf.peers)/2 && matchIndex > rf.commitIndex && rf.logs[matchIndex].Term == rf.currentTerm {
+					rf.commitIndex = matchIndex
 				}
 			}
 		}
