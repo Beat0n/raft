@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-const ElectionTimeout = 200
-const HeartBeatTime = 100 * time.Millisecond
+const ElectionTimeoutMin = 150
+const ElectionTimeoutMax = 300
+const HeartBeatTime = 80 * time.Millisecond
 
 // The ticker go routine starts a new election if this peer hasn't received
 // heartsbeats recently.
@@ -28,7 +29,7 @@ func (rf *Raft) ticker() {
 	}
 }
 func randomElectionTimeout() int {
-	return rand.Intn(ElectionTimeout) + ElectionTimeout
+	return rand.Intn(ElectionTimeoutMax-ElectionTimeoutMin) + ElectionTimeoutMin
 }
 
 func (rf *Raft) resetElectionTime() {
