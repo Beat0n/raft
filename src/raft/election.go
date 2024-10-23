@@ -32,15 +32,19 @@ func (rf *Raft) startElection() {
 			continue
 		}
 		reply := RequestVoteReply{}
-		go rf.handleVote(server, &args, &reply, summer)
+		go rf.sendRequestVote(server, &args, &reply, summer)
 	}
 }
 
-func (rf *Raft) handleVote(server int, args *RequestVoteArgs, reply *RequestVoteReply, summer *votes) {
-	if !rf.sendRequestVote(server, args, reply) {
+func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply, summer *votes) {
+	DPrintf("---Term %d--- %s send request_vote to %s", args.Term, ServerName(rf.me, rf.role), ServerName(server, 3))
+	if !rf.sendRPC(server, "Raft.RequestVote", args, reply) {
 		return
 	}
 	// handle reply sequentially
+	if summer.done {
+		return
+	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	if summer.done || reply.Term < rf.currentTerm {

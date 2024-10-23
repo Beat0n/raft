@@ -78,6 +78,7 @@ type Raft struct {
 	commitIndex int // index of highest log entry known to be committed
 	lastApplied int // index of highest log entry applied to state machine
 	logs        []entry
+	alive       []bool // is remote peer alive?
 
 	// on leader
 	nextIndex  []int // for each server, index of the next log entry to send to that server
@@ -234,4 +235,14 @@ func (rf *Raft) encodeState() []byte {
 	e.Encode(rf.logs)
 	raftState := w.Bytes()
 	return raftState
+}
+
+func (rf *Raft) sendRPC(server int, svcMeth string, args interface{}, reply interface{}) bool {
+	beginTime := time.Now()
+	for i := 0; i < RPCRetry && time.Since(beginTime) < HeartBeatTime; i++ {
+		if rf.peers[server].Call(svcMeth, args, reply) {
+			return true
+		}
+	}
+	return false
 }

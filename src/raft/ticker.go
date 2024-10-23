@@ -5,10 +5,6 @@ import (
 	"time"
 )
 
-const ElectionTimeoutMin = 150
-const ElectionTimeoutMax = 300
-const HeartBeatTime = 80 * time.Millisecond
-
 // The ticker go routine starts a new election if this peer hasn't received
 // heartsbeats recently.
 func (rf *Raft) ticker() {

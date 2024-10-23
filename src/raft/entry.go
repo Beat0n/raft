@@ -1,9 +1,5 @@
 package raft
 
-import "time"
-
-const ApplyFreq = 100 * time.Millisecond
-
 type entry struct {
 	Command interface{}
 	Term    int
@@ -60,6 +56,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			rf.role = Follower
 		}
 		prevIndex := args.PrevLogIndex - rf.lastIncluded()
+		if prevIndex < 0 {
+			DPrintf2(rf, "receive logs already snapshot, ignore")
+			reply.Term = rf.currentTerm
+			reply.Success = true
+			return
+		}
 		if len(rf.logs) <= prevIndex {
 			reply.Success = false
 			reply.XTerm = -1
@@ -135,7 +137,10 @@ func (rf *Raft) lastLog() *entry {
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply, done *bool) {
-	if !rf.peers[server].Call("Raft.AppendEntries", args, reply) {
+	if !rf.sendRPC(server, "Raft.AppendEntries", args, reply) {
+		return
+	}
+	if *done {
 		return
 	}
 	rf.mu.Lock()

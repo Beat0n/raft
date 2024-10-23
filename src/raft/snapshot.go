@@ -110,7 +110,10 @@ func (rf *Raft) lastIncluded() int {
 
 func (rf *Raft) sendSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	DPrintf2(rf, "send snapshot to %s with LastIncludedIndex: %d, data bytes: %d", ServerName(server, Follower), args.LastIncludedIndex, len(args.Data))
-	if !rf.peers[server].Call("Raft.InstallSnapshot", args, reply) {
+	if !rf.sendRPC(server, "Raft.InstallSnapshot", args, reply) {
+		return
+	}
+	if !rf.sendRPC(server, "Raft.InstallSnapshot", args, reply) {
 		return
 	}
 	rf.mu.Lock()
