@@ -74,10 +74,11 @@ type Raft struct {
 	heartBeatTime time.Duration
 	electionTime  time.Time
 
-	logs []entry
 	// on all servers
 	commitIndex int // index of highest log entry known to be committed
 	lastApplied int // index of highest log entry applied to state machine
+	logs        []entry
+
 	// on leader
 	nextIndex  []int // for each server, index of the next log entry to send to that server
 	matchIndex []int // for each server, index of highest log entry known to be replicated on server
@@ -103,13 +104,8 @@ func (rf *Raft) GetState() (int, bool) {
 // (or nil if there's not yet a snapshot).
 func (rf *Raft) persist() {
 	// Your code here (2C).
-	w := new(bytes.Buffer)
-	e := labgob.NewEncoder(w)
-	e.Encode(rf.votedFor)
-	e.Encode(rf.currentTerm)
-	e.Encode(rf.logs)
-	raftState := w.Bytes()
-	rf.persister.Save(raftState, nil)
+	rf.persister.Save(rf.encodeState(), rf.persister.ReadSnapshot())
+	DPrintf2(rf, "persist...")
 }
 
 // restore previously persisted state.
@@ -130,16 +126,9 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.currentTerm = term
 		rf.logs = logs
 	}
+	rf.lastApplied = rf.logs[0].Index
+	rf.commitIndex = rf.logs[0].Index
 	DPrintf2(rf, "recovered")
-}
-
-// the service says it has created a snapshot that has
-// all info up to and including index. this means the
-// service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (2D).
-
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -230,8 +219,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 }
 
 func (rf *Raft) setNewTerm(term int) {
+	DPrintf2(rf, "step into term(%d)", term)
 	rf.currentTerm = term
 	rf.votedFor = -1
 	rf.role = Follower
 	rf.persist()
+}
+
+func (rf *Raft) encodeState() []byte {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.logs)
+	raftState := w.Bytes()
+	return raftState
 }

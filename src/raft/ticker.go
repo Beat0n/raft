@@ -28,10 +28,34 @@ func (rf *Raft) ticker() {
 		rf.mu.Unlock()
 	}
 }
+
 func randomElectionTimeout() int {
 	return rand.Intn(ElectionTimeoutMax-ElectionTimeoutMin) + ElectionTimeoutMin
 }
 
 func (rf *Raft) resetElectionTime() {
 	rf.electionTime = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+}
+
+// Apply log to state machine
+func (rf *Raft) applier() {
+	for {
+		time.Sleep(ApplyFreq)
+		var applyMsg []ApplyMsg
+		rf.mu.Lock()
+		for rf.lastApplied < rf.commitIndex {
+			rf.lastApplied++
+			log := &rf.logs[rf.lastApplied-rf.lastIncluded()]
+			DPrintf2(rf, "apply log[%d], command is %v\n", rf.lastApplied, log.Command)
+			applyMsg = append(applyMsg, ApplyMsg{
+				CommandValid: true,
+				Command:      log.Command,
+				CommandIndex: log.Index,
+			})
+		}
+		rf.mu.Unlock()
+		for _, msg := range applyMsg {
+			rf.applyCh <- msg
+		}
+	}
 }

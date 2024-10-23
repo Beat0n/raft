@@ -29,11 +29,10 @@ type AppendEntriesReply struct {
 
 // Append logs from leader to self
 func (rf *Raft) appendLogs(args *AppendEntriesArgs) {
-	i := args.PrevLogIndex + 1
+	i := args.PrevLogIndex + 1 - rf.lastIncluded()
 	j := 0
 	for i < len(rf.logs) && j < len(args.Entries) {
 		if rf.logs[i] != args.Entries[j] {
-			rf.logs[i] = args.Entries[j]
 			rf.logs = append(rf.logs[:i], args.Entries[j:]...)
 			DPrintf2(rf, "length: %d, logs: %v", len(rf.logs), rf.logs)
 			return
@@ -60,15 +59,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		} else {
 			rf.role = Follower
 		}
-		if len(rf.logs) <= args.PrevLogIndex {
+		prevIndex := args.PrevLogIndex - rf.lastIncluded()
+		if len(rf.logs) <= prevIndex {
 			reply.Success = false
 			reply.XTerm = -1
-			reply.XLen = len(rf.logs)
-		} else if rf.logs[args.PrevLogIndex].Term != args.PrevLogTerm {
+			reply.XLen = rf.lastLog().Index + 1
+		} else if rf.logs[prevIndex].Term != args.PrevLogTerm {
 			reply.Success = false
-			reply.XTerm = rf.logs[args.PrevLogIndex].Term
-			reply.XIndex = rf.findFirstLogByTerm(rf.logs[args.PrevLogIndex].Term)
-			rf.logs = rf.logs[:args.PrevLogIndex]
+			reply.XTerm = rf.logs[prevIndex].Term
+			reply.XIndex = rf.findFirstLogByTerm(rf.logs[prevIndex].Term)
+			rf.logs = rf.logs[:prevIndex]
 		} else {
 			reply.Success = true
 			rf.appendLogs(args)
@@ -84,23 +84,30 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Term = rf.currentTerm
 }
 
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	return ok
-}
-
 func (rf *Raft) sendEntries(isHeartBeat bool) {
 	rf.resetElectionTime()
+	done := false
 	for server := range rf.peers {
 		if server == rf.me {
 			continue
 		}
-		done := false
-		nextIndex := rf.nextIndex[server]
+		if rf.nextIndex[server] <= rf.lastIncluded() {
+			args := &InstallSnapshotArgs{
+				Term:              rf.currentTerm,
+				LastIncludedIndex: rf.logs[0].Index,
+				LastIncludedTerm:  rf.logs[0].Term,
+				Data:              rf.persister.ReadSnapshot(),
+			}
+			reply := &InstallSnapshotReply{}
+			go rf.sendSnapshot(server, args, reply)
+			continue
+		}
+		nextLogIndex := rf.nextIndex[server]
+		nextIndex := nextLogIndex - rf.lastIncluded()
+		lastLogIndex := rf.lastLog().Index
 		var entries []entry
 		if !isHeartBeat {
-			lastLogIndex := rf.lastLog().Index
-			entries = make([]entry, lastLogIndex-nextIndex+1)
+			entries = make([]entry, len(rf.logs[nextIndex:]))
 			copy(entries, rf.logs[nextIndex:])
 		}
 		args := AppendEntriesArgs{
@@ -116,10 +123,10 @@ func (rf *Raft) sendEntries(isHeartBeat bool) {
 		} else if len(args.Entries) == 0 {
 			DPrintf2(rf, "send empty logs to %s\n", ServerName(server, 3))
 		} else {
-			DPrintf2(rf, "send logs[%d:%d] to %s\n", nextIndex, len(rf.logs)-1, ServerName(server, 3))
+			DPrintf2(rf, "send logs[%d:%d] to %s\n", nextLogIndex, lastLogIndex, ServerName(server, 3))
 		}
 		reply := AppendEntriesReply{}
-		go rf.handleAppendEntryReply(server, &args, &reply, &done)
+		go rf.sendAppendEntries(server, &args, &reply, &done)
 	}
 }
 
@@ -127,13 +134,13 @@ func (rf *Raft) lastLog() *entry {
 	return &rf.logs[len(rf.logs)-1]
 }
 
-func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, reply *AppendEntriesReply, done *bool) {
-	if !rf.sendAppendEntries(server, args, reply) {
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply, done *bool) {
+	if !rf.peers[server].Call("Raft.AppendEntries", args, reply) {
 		return
 	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
+	// handle reply
 	if *done {
 		return
 	}
@@ -161,45 +168,8 @@ func (rf *Raft) handleAppendEntryReply(server int, args *AppendEntriesArgs, repl
 		} else {
 			DPrintf2(rf, "send logs to %s receive success", ServerName(server, 3))
 			matchIndex := args.PrevLogIndex + len(args.Entries)
-			nextIndex := matchIndex + 1
-			if matchIndex > rf.matchIndex[server] {
-				rf.matchIndex[server] = matchIndex
-				rf.nextIndex[server] = nextIndex
-				rf.nMatch[matchIndex]++
-				//todo: 不能提交之前任期内的日志
-				N := rf.nMatch[matchIndex]
-				DPrintf2(rf, "Index: %d, N: %d", matchIndex, N)
-				if N > len(rf.peers)/2 && matchIndex > rf.commitIndex && rf.logs[matchIndex].Term == rf.currentTerm {
-					rf.commitIndex = matchIndex
-				}
-			}
+			rf.updateMatchIndex(server, matchIndex)
 		}
-	}
-}
-
-// Apply log to state machine
-func (rf *Raft) applier() {
-	for {
-		time.Sleep(ApplyFreq)
-		rf.mu.Lock()
-		for rf.lastApplied < rf.commitIndex {
-			rf.lastApplied++
-			// ignore no-op log
-			//if rf.logs[rf.lastApplied].Command == nil {
-			//	continue
-			//}
-			DPrintf2(rf, "apply log[%d], command is %v\n", rf.lastApplied, rf.logs[rf.lastApplied].Command)
-			rf.applyCh <- ApplyMsg{
-				CommandValid:  true,
-				Command:       rf.logs[rf.lastApplied].Command,
-				CommandIndex:  rf.logs[rf.lastApplied].Index,
-				SnapshotValid: false,
-				Snapshot:      nil,
-				SnapshotTerm:  0,
-				SnapshotIndex: 0,
-			}
-		}
-		rf.mu.Unlock()
 	}
 }
 
@@ -240,5 +210,21 @@ func (rf *Raft) findFirstLogByTerm(term int) int {
 			left = mid + 1
 		}
 	}
-	return target
+	return target + rf.lastIncluded()
+}
+
+func (rf *Raft) updateMatchIndex(server, matchIndex int) {
+	if matchIndex > rf.matchIndex[server] {
+		rf.matchIndex[server] = matchIndex
+		rf.nextIndex[server] = matchIndex + 1
+		if matchIndex <= rf.commitIndex {
+			return
+		}
+		rf.nMatch[matchIndex]++
+		N := rf.nMatch[matchIndex]
+		DPrintf2(rf, "Index: %d, N: %d", matchIndex, N)
+		if N > len(rf.peers)/2 && matchIndex > rf.commitIndex && rf.logs[matchIndex-rf.lastIncluded()].Term == rf.currentTerm {
+			rf.commitIndex = matchIndex
+		}
+	}
 }
