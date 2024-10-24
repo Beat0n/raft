@@ -18,11 +18,14 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
+
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	OpType string
+	Key    string
+	Value  string
 }
 
 type KVServer struct {
@@ -35,15 +38,58 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
+	database map[string]string
+	channels map[int]chan struct{}
 }
-
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	op := Op{
+		OpType: GET,
+		Key:    args.Key,
+		Value:  "",
+	}
+	_, _, ok := kv.rf.Start(op)
+	if ok {
+		kv.mu.Lock()
+		value, exist := kv.database[args.Key]
+		if exist {
+			reply.Err = OK
+			reply.Value = value
+		} else {
+			reply.Err = ErrNoKey
+			reply.Value = ""
+		}
+		kv.mu.Unlock()
+	} else {
+		reply.Err = ErrWrongLeader
+	}
+	DPrintf("{server %d} Get Key: %s, reply: %v", kv.me, args.Key, *reply)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	op := Op{
+		OpType: args.Op,
+		Key:    args.Key,
+		Value:  args.Value,
+	}
+	var index int
+	var ok = false
+	index, _, ok = kv.rf.Start(op)
+	if ok {
+		kv.mu.Lock()
+		kv.channels[index] = make(chan struct{})
+		kv.mu.Unlock()
+		reply.Err = OK
+		DPrintf("{server %d} %s Key: %s success!", kv.me, args.Op, args.Key)
+		// blocked until raft reach agreement
+		<-kv.channels[index]
+	} else {
+		reply.Err = ErrWrongLeader
+		DPrintf("{server %d} %s Key: %s, reply.Err: %v", kv.me, args.Op, args.Key, reply.Err)
+		return
+	}
 }
 
 // the tester calls Kill() when a KVServer instance won't
@@ -90,8 +136,35 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.database = make(map[string]string)
+	kv.channels = make(map[int]chan struct{})
 
 	// You may need initialization code here.
-
+	go kv.apply()
 	return kv
+}
+
+func (kv *KVServer) apply() {
+	for {
+		msg := <-kv.applyCh
+		if msg.CommandValid {
+			op := msg.Command.(Op)
+			index := msg.CommandIndex
+			DPrintf("{server %d} applied log[%d]: {%s Key: %s, Value: %s}", kv.me, index, op.OpType, op.Key, op.Value)
+			kv.mu.Lock()
+			if op.OpType == PUT {
+				kv.database[op.Key] = op.Value
+			} else if op.OpType == APPEND {
+				kv.database[op.Key] += op.Value
+			} else if op.OpType == GET {
+
+			}
+			DPrintf("{Key :%s, Value: %s}", op.Key, kv.database[op.Key])
+			if _, exist := kv.channels[index]; exist {
+				kv.channels[index] <- struct{}{}
+				delete(kv.channels, index)
+			}
+			kv.mu.Unlock()
+		}
+	}
 }
