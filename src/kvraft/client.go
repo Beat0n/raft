@@ -3,6 +3,8 @@ package kvraft
 import (
 	"6.5840/labrpc"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 import "crypto/rand"
 import "math/big"
@@ -25,6 +27,9 @@ func makeSummer() *summer {
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
+	leaderId  int32
+	requestId int32
+	selfId    int64
 }
 
 func nrand() int64 {
@@ -38,6 +43,9 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
+	ck.leaderId = 0
+	ck.requestId = 0
+	ck.selfId = nrand()
 	return ck
 }
 
@@ -54,21 +62,30 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
-	DPrintf("{Client} Get Key: %s", key)
-	sum := makeSummer()
-	for server := range ck.servers {
-		args := GetArgs{key}
-		reply := GetReply{}
-		go ck.sendGet(server, &args, &reply, sum)
+	n := len(ck.servers)
+	requestId := atomic.AddInt32(&ck.requestId, 1)
+	for {
+		leaderId := int(atomic.LoadInt32(&ck.leaderId))
+		for i := 0; i < n; i++ {
+			args := &GetArgs{key, requestId, ck.selfId}
+			reply := &GetReply{}
+			server := (i + leaderId) % n
+			DPrintf("{Client %d} send request[%d] to {Server %d}: {Get Key: %s}", ck.selfId, requestId, server, key)
+			if !ck.servers[server].Call("KVServer.Get", args, reply) {
+				DPrintf("{Client %d} send request[%d] RPC to {Server %d} {Get Key: %s} failed", ck.selfId, requestId, server, args.Key)
+				continue
+			}
+			DPrintf("{Client %d} receive reply for request[%d] from {Server %d} {reply: %+v}", ck.selfId, requestId, server, *reply)
+			if reply.Err == OK || reply.Err == ErrNoKey {
+				atomic.StoreInt32(&ck.leaderId, int32(server))
+				return reply.Value
+			} else if reply.Err == ErrStartTimeout {
+				atomic.StoreInt32(&ck.leaderId, int32((server+1)%n))
+				break
+			}
+		}
+		time.Sleep(SleepTimeWhenNoLeaders)
 	}
-	reply := <-sum.ch
-	if reply.err == OK || reply.err == ErrNoKey {
-		DPrintf("{Client} Get success! {Key: %s, Value: %s}", key, reply.value)
-		return reply.value
-	}
-	// retry
-	//time.Sleep(100 * time.Millisecond)
-	return ck.Get(key)
 }
 
 // shared by Put and Append.
@@ -81,19 +98,30 @@ func (ck *Clerk) Get(key string) string {
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
-	DPrintf("{Client} {%s Key: %s, Value: %s}", op, key, value)
-	sum := makeSummer()
 
 	n := len(ck.servers)
-	for server := 0; server < n; server++ {
-		args := PutAppendArgs{key, value, op}
-		reply := PutAppendReply{}
-		go ck.sendPutAppend(server, &args, &reply, sum)
-	}
-	reply := <-sum.ch
-	if reply.err == ErrNoLeader {
-		//time.Sleep(100 * time.Millisecond)
-		ck.PutAppend(key, value, op)
+	requestId := atomic.AddInt32(&ck.requestId, 1)
+	DPrintf("{Client %d} send request[%d]: {%s Key: %s, Value: %s}", ck.selfId, requestId, op, key, value)
+	for {
+		leaderId := int(atomic.LoadInt32(&ck.leaderId))
+		for i := 0; i < n; i++ {
+			args := &PutAppendArgs{key, value, op, requestId, ck.selfId}
+			reply := &PutAppendReply{}
+			server := (i + leaderId) % n
+			if !ck.servers[server].Call("KVServer.PutAppend", args, reply) {
+				DPrintf("{Client %d} send request[%d] to {Server %d} {%s Key: %s, Value: %s} failed", ck.selfId, requestId, server, args.Op, args.Key, args.Value)
+				continue
+			}
+			if reply.Err == OK {
+				DPrintf("{Client %d} received reply for request[%d] from server[%d], {%s Key: %s, Value: %s}", ck.selfId, requestId, server, op, key, value)
+				atomic.StoreInt32(&ck.leaderId, int32(server))
+				return
+			} else if reply.Err == ErrStartTimeout {
+				atomic.StoreInt32(&ck.leaderId, int32((server+1)%n))
+				break
+			}
+		}
+		time.Sleep(SleepTimeWhenNoLeaders)
 	}
 }
 
@@ -104,49 +132,49 @@ func (ck *Clerk) Append(key string, value string) {
 	ck.PutAppend(key, value, "Append")
 }
 
-func (ck *Clerk) sendPutAppend(server int, args *PutAppendArgs, reply *PutAppendReply, sum *summer) {
-	if !ck.servers[server].Call("KVServer.PutAppend", args, reply) {
-		DPrintf("{Client} send RPC {%s Key: %s, Value: %s} failed", args.Op, args.Key, args.Value)
-		return
-	}
-	if reply.Err == OK {
-		DPrintf("{Client} {%s Key: %s, Value: %s} success!", args.Op, args.Key, args.Value)
-		sum.ch <- &commonReply{
-			value: "",
-			err:   OK,
-		}
-	} else {
-		sum.mu.Lock()
-		sum.n++
-		if sum.n == len(ck.servers) {
-			DPrintf("{Client} {%s Key: %s, Value: %s} failed: No leaders now", args.Op, args.Key, args.Value)
-			sum.ch <- &commonReply{
-				value: "",
-				err:   ErrNoLeader,
-			}
-		}
-		sum.mu.Unlock()
-	}
-}
-
-func (ck *Clerk) sendGet(server int, args *GetArgs, reply *GetReply, sum *summer) {
-	if !ck.servers[server].Call("KVServer.Get", args, reply) {
-		return
-	}
-	if reply.Err == OK || reply.Err == ErrNoKey {
-		sum.ch <- &commonReply{
-			value: reply.Value,
-			err:   reply.Err,
-		}
-	} else {
-		sum.mu.Lock()
-		sum.n++
-		if sum.n == len(ck.servers) {
-			sum.ch <- &commonReply{
-				value: "",
-				err:   ErrNoLeader,
-			}
-		}
-		sum.mu.Unlock()
-	}
-}
+//func (ck *Clerk) sendPutAppend(server int, args *PutAppendArgs, reply *PutAppendReply) {
+//	if !ck.servers[server].Call("KVServer.PutAppend", args, reply) {
+//		DPrintf("{Client} send RPC {%s Key: %s, Value: %s} failed", args.Op, args.Key, args.Value)
+//		return
+//	}
+//	if reply.Err == OK {
+//		DPrintf("{Client} {%s Key: %s, Value: %s} success!", args.Op, args.Key, args.Value)
+//		sum.ch <- &commonReply{
+//			value: "",
+//			err:   OK,
+//		}
+//	} else {
+//		sum.mu.Lock()
+//		sum.n++
+//		if sum.n == len(ck.servers) {
+//			DPrintf("{Client} {%s Key: %s, Value: %s} failed: No leaders now", args.Op, args.Key, args.Value)
+//			sum.ch <- &commonReply{
+//				value: "",
+//				err:   ErrNoLeader,
+//			}
+//		}
+//		sum.mu.Unlock()
+//	}
+//}
+//
+//func (ck *Clerk) sendGet(server int, args *GetArgs, reply *GetReply) {
+//	if !ck.servers[server].Call("KVServer.Get", args, reply) {
+//		return
+//	}
+//	if reply.Err == OK || reply.Err == ErrNoKey {
+//		sum.ch <- &commonReply{
+//			value: reply.Value,
+//			err:   reply.Err,
+//		}
+//	} else {
+//		sum.mu.Lock()
+//		sum.n++
+//		if sum.n == len(ck.servers) {
+//			sum.ch <- &commonReply{
+//				value: "",
+//				err:   ErrNoLeader,
+//			}
+//		}
+//		sum.mu.Unlock()
+//	}
+//}

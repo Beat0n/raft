@@ -7,9 +7,10 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-const Debug = false
+const Debug = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -23,9 +24,28 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	OpType string
-	Key    string
-	Value  string
+	OpType    string
+	Key       string
+	Value     string
+	ClientId  int64
+	RequestId int32
+}
+
+type client struct {
+	clientId     int64
+	requestId    int32
+	prevGetReply *GetReply
+	getCh        chan *GetReply
+	putAppendCh  chan struct{}
+}
+
+func makeClient(clientId int64) *client {
+	c := new(client)
+	c.clientId = clientId
+	c.requestId = 1
+	c.getCh = nil
+	c.putAppendCh = nil
+	return c
 }
 
 type KVServer struct {
@@ -39,52 +59,132 @@ type KVServer struct {
 
 	// Your definitions here.
 	database map[string]string
-	channels map[int]chan struct{}
+	clients  map[int64]*client
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
-	op := Op{
-		OpType: GET,
-		Key:    args.Key,
-		Value:  "",
+	DPrintf("{server %d} receive request[%d] from {Client %d} {Get, Key: %s}", kv.me, args.RequestId, args.ClientId, args.Key)
+	defer func() {
+		DPrintf("{server %d} send {reply: %v} to {Client %d, request[%d]}", kv.me, reply.Err, args.ClientId, args.RequestId)
+	}()
+	kv.mu.Lock()
+	if kv.clients[args.ClientId] == nil {
+		kv.clients[args.ClientId] = makeClient(args.ClientId)
 	}
-	_, _, ok := kv.rf.Start(op)
-	if ok {
-		kv.mu.Lock()
-		value, exist := kv.database[args.Key]
-		if exist {
-			reply.Err = OK
-			reply.Value = value
+	if kv.clients[args.ClientId].requestId == args.RequestId+1 {
+		if kv.clients[args.ClientId].prevGetReply != nil {
+			reply.Err = kv.clients[args.ClientId].prevGetReply.Err
+			reply.Value = kv.clients[args.ClientId].prevGetReply.Value
 		} else {
-			reply.Err = ErrNoKey
-			reply.Value = ""
+			reply.Err = ErrWrongLeader
 		}
 		kv.mu.Unlock()
+		return
+	}
+	if kv.clients[args.ClientId].requestId > args.RequestId+1 {
+		kv.mu.Unlock()
+		DPrintf("{server %d} received expired request[%d] from {Client %d}", kv.me, args.RequestId, args.ClientId)
+		reply.Err = ErrExpiredReq
+		return
+	}
+	kv.mu.Unlock()
+	op := Op{
+		OpType:    GET,
+		Key:       args.Key,
+		Value:     "",
+		ClientId:  args.ClientId,
+		RequestId: args.RequestId,
+	}
+	_, term1, ok := kv.rf.Start(op)
+	if ok {
+		ticker := time.NewTicker(StartTickerTime)
+		timer := time.NewTimer(StartTimerTime)
+		// blocked until all write request before applied
+		kv.mu.Lock()
+		kv.clients[args.ClientId].getCh = make(chan *GetReply, 1)
+		ch := kv.clients[args.ClientId].getCh
+		kv.mu.Unlock()
+		for {
+			select {
+			case <-timer.C:
+				DPrintf("{server %d} start request[%d] from {Client %d} {Get, Key: %s} timeout,", kv.me, args.RequestId, args.ClientId, args.Key)
+				reply.Err = ErrStartTimeout
+				return
+			case <-ticker.C:
+				DPrintf("{Server %d} is doing start, tick...", kv.me)
+				if term2, isLeader := kv.rf.GetState(); !isLeader || term1 != term2 {
+					DPrintf("{server %d} start request[%d] from {Client %d} {Get, Key: %s} failed: leader changed", kv.me, args.RequestId, args.ClientId, args.Key)
+					reply.Err = ErrStartTimeout
+					return
+				}
+			case tmp := <-ch:
+				reply.Err = tmp.Err
+				reply.Value = tmp.Value
+			}
+		}
 	} else {
 		reply.Err = ErrWrongLeader
 	}
-	DPrintf("{server %d} Get Key: %s, reply: %v", kv.me, args.Key, *reply)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
-	op := Op{
-		OpType: args.Op,
-		Key:    args.Key,
-		Value:  args.Value,
+	DPrintf("{server %d} receive request[%d] from {Client %d} {%s, Key: %s, Value: %s}", kv.me, args.RequestId, args.ClientId, args.Op, args.Key, args.Value)
+	defer func() {
+		DPrintf("{server %d} send {reply: %v} to {Client %d, request[%d]}", kv.me, reply.Err, args.ClientId, args.RequestId)
+	}()
+	kv.mu.Lock()
+	if _, connected := kv.clients[args.ClientId]; !connected {
+		kv.clients[args.ClientId] = makeClient(args.ClientId)
 	}
-	var index int
-	var ok = false
-	index, _, ok = kv.rf.Start(op)
-	if ok {
-		kv.mu.Lock()
-		kv.channels[index] = make(chan struct{})
+	if kv.clients[args.ClientId].requestId == args.RequestId+1 {
 		kv.mu.Unlock()
 		reply.Err = OK
-		DPrintf("{server %d} %s Key: %s success!", kv.me, args.Op, args.Key)
+		return
+	}
+	if kv.clients[args.ClientId].requestId > args.RequestId+1 {
+		kv.mu.Unlock()
+		DPrintf("{server %d} received expired request[%d] from {Client %d}", kv.me, args.RequestId, args.ClientId)
+		reply.Err = ErrExpiredReq
+		return
+	}
+	kv.mu.Unlock()
+	op := Op{
+		OpType:    args.Op,
+		Key:       args.Key,
+		Value:     args.Value,
+		ClientId:  args.ClientId,
+		RequestId: args.RequestId,
+	}
+	_, term1, ok := kv.rf.Start(op)
+	ticker := time.NewTicker(StartTickerTime)
+	timer := time.NewTimer(StartTimerTime)
+	if ok {
 		// blocked until raft reach agreement
-		<-kv.channels[index]
+		kv.mu.Lock()
+		kv.clients[args.ClientId].putAppendCh = make(chan struct{}, 1)
+		ch := kv.clients[args.ClientId].putAppendCh
+		kv.mu.Unlock()
+		for {
+			select {
+			case <-timer.C:
+				DPrintf("{server %d} start request[%d] from {Client %d} {%s, Key: %s, Value: %s} timeout,", kv.me, args.RequestId, args.ClientId, args.Op, args.Key, args.Value)
+				reply.Err = ErrStartTimeout
+				return
+			case <-ticker.C:
+				DPrintf("{Server %d} is doing start, tick...", kv.me)
+				if term2, isLeader := kv.rf.GetState(); !isLeader || term1 != term2 {
+					DPrintf("{server %d} start request[%d] from {Client %d} {%s, Key: %s, Value: %s} failed: leader changed", kv.me, args.RequestId, args.ClientId, args.Op, args.Key, args.Value)
+					reply.Err = ErrWrongLeader
+					return
+				}
+			case <-ch:
+				DPrintf("{server %d} {%s, Key: %s, Value: %s} success!", kv.me, args.Op, args.Key, args.Value)
+				reply.Err = OK
+				return
+			}
+		}
 	} else {
 		reply.Err = ErrWrongLeader
 		DPrintf("{server %d} %s Key: %s, reply.Err: %v", kv.me, args.Op, args.Key, reply.Err)
@@ -137,32 +237,55 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.database = make(map[string]string)
-	kv.channels = make(map[int]chan struct{})
+	kv.clients = make(map[int64]*client)
 
 	// You may need initialization code here.
-	go kv.apply()
+	go kv.applier()
 	return kv
 }
 
-func (kv *KVServer) apply() {
-	for {
+func (kv *KVServer) applier() {
+	for !kv.killed() {
 		msg := <-kv.applyCh
 		if msg.CommandValid {
 			op := msg.Command.(Op)
 			index := msg.CommandIndex
-			DPrintf("{server %d} applied log[%d]: {%s Key: %s, Value: %s}", kv.me, index, op.OpType, op.Key, op.Value)
+			clientId := op.ClientId
+			requestId := op.RequestId
+			DPrintf("{server %d} applied log[%d]: %+v", kv.me, index, op)
 			kv.mu.Lock()
-			if op.OpType == PUT {
+			if kv.clients[clientId] == nil {
+				kv.clients[clientId] = makeClient(clientId)
+			}
+			if kv.clients[clientId].requestId > requestId {
+				kv.mu.Unlock()
+				continue
+			}
+			kv.clients[clientId].requestId = requestId + 1
+			switch op.OpType {
+			case GET:
+				if kv.clients[clientId].getCh != nil {
+					reply := GetReply{}
+					if value, exist := kv.database[op.Key]; exist {
+						reply.Err = OK
+						reply.Value = value
+					} else {
+						reply.Err = ErrNoKey
+						reply.Value = ""
+					}
+					kv.clients[clientId].prevGetReply = &reply
+					kv.clients[clientId].getCh <- &reply
+					kv.clients[clientId].getCh = nil
+				}
+			case PUT:
 				kv.database[op.Key] = op.Value
-			} else if op.OpType == APPEND {
+			case APPEND:
 				kv.database[op.Key] += op.Value
-			} else if op.OpType == GET {
-
 			}
 			DPrintf("{Key :%s, Value: %s}", op.Key, kv.database[op.Key])
-			if _, exist := kv.channels[index]; exist {
-				kv.channels[index] <- struct{}{}
-				delete(kv.channels, index)
+			if (op.OpType == PUT || op.OpType == APPEND) && kv.clients[clientId].putAppendCh != nil {
+				kv.clients[clientId].putAppendCh <- struct{}{}
+				kv.clients[clientId].putAppendCh = nil
 			}
 			kv.mu.Unlock()
 		}
