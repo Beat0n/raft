@@ -2,6 +2,8 @@ package kvraft
 
 import "time"
 
+const Debug = false
+
 const (
 	PUT    = "Put"
 	GET    = "Get"
@@ -11,8 +13,9 @@ const (
 const (
 	OK               Err = "OK"
 	ErrNoKey         Err = "ErrNoKey"
-	ErrExpiredReq    Err = "ErrExpiredReq"
+	ErrDupReq        Err = "ErrDupReq"
 	ErrWrongLeader   Err = "ErrWrongLeader"
+	ErrCommitFailed      = "ErrCommitFailed"
 	ErrNoLeader      Err = "ErrNoLeader"
 	ErrCommitTimeout Err = "ErrCommitTimeout"
 )

@@ -1,5 +1,32 @@
 package kvraft
 
+import "log"
+
+func DPrintf(format string, a ...interface{}) {
+	if Debug {
+		log.Printf(format, a...)
+	}
+	return
+}
+
+type Op struct {
+
+	// Your definitions here.
+	// Field names must start with capital letters,
+	// otherwise RPC will break.
+	OpType    string
+	Key       string
+	Value     string
+	ClientId  int64
+	RequestId int32
+}
+
+type OpResult struct {
+	op    *Op
+	Err   Err
+	Value string
+}
+
 type Err string
 
 // Put or Append
