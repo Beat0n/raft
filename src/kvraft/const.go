@@ -9,17 +9,17 @@ const (
 )
 
 const (
-	OK              Err = "OK"
-	ErrNoKey        Err = "ErrNoKey"
-	ErrExpiredReq   Err = "ErrExpiredReq"
-	ErrWrongLeader  Err = "ErrWrongLeader"
-	ErrNoLeader     Err = "ErrNoLeader"
-	ErrStartTimeout Err = "ErrTimeout"
+	OK               Err = "OK"
+	ErrNoKey         Err = "ErrNoKey"
+	ErrExpiredReq    Err = "ErrExpiredReq"
+	ErrWrongLeader   Err = "ErrWrongLeader"
+	ErrNoLeader      Err = "ErrNoLeader"
+	ErrCommitTimeout Err = "ErrCommitTimeout"
 )
 
 const (
-	StartTickerTime        = time.Millisecond * 1
-	StartTimerTime         = time.Millisecond * 4
+	CommitTickerTime       = time.Millisecond * 40
+	CommitTimerTime        = time.Millisecond * 200
 	RPCTries               = 4
 	SleepTimeWhenNoLeaders = time.Millisecond * 5
 )

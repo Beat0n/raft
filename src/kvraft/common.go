@@ -29,3 +29,16 @@ type GetReply struct {
 	Err   Err
 	Value string
 }
+
+type CommandArgs struct {
+	Key       string
+	Value     string
+	Op        string // "Put" or "Append" or "Get"
+	RequestId int32
+	ClientId  int64
+}
+
+type CommandReply struct {
+	Err   Err
+	Value string
+}
