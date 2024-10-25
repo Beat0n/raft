@@ -237,5 +237,4 @@ func (kv *KVServer) readSnapshot(data []byte) {
 	if d.Decode(&kv.database) != nil || d.Decode(&kv.clients) != nil {
 		panic("KVServer read snapshot fail")
 	}
-	DPrintf("{MAP}: %+v", kv.database)
 }

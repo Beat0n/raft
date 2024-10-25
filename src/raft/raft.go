@@ -246,3 +246,7 @@ func (rf *Raft) sendRPC(server int, svcMeth string, args interface{}, reply inte
 	}
 	return false
 }
+
+func (rf *Raft) GetPersister() *Persister {
+	return rf.persister
+}
