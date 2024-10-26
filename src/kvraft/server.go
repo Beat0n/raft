@@ -84,8 +84,8 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 func (kv *KVServer) applier() {
 	for !kv.killed() {
 		msg := <-kv.applyCh
-		kv.lastAppliedIndex++
 		if msg.CommandValid {
+			kv.lastAppliedIndex++
 			op := msg.Command.(Op)
 			index := msg.CommandIndex
 			kv.processOp(&op, index)
@@ -99,7 +99,7 @@ func (kv *KVServer) applier() {
 		} else if msg.SnapshotValid {
 			if kv.lastAppliedIndex >= msg.SnapshotIndex {
 				DPrintf("{Server %d} Refuse a outdated snapshot at Index: %d", kv.me, msg.SnapshotIndex)
-				return
+				continue
 			}
 			kv.lastAppliedIndex = msg.SnapshotIndex
 			DPrintf("{Server %d} Read a snapshot at Index: %d", kv.me, msg.SnapshotIndex)
