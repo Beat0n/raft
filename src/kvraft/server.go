@@ -97,6 +97,11 @@ func (kv *KVServer) applier() {
 				kv.rf.Snapshot(index, snapshot)
 			}
 		} else if msg.SnapshotValid {
+			if kv.lastAppliedIndex >= msg.SnapshotIndex {
+				DPrintf("{Server %d} Refuse a outdated snapshot at Index: %d", kv.me, msg.SnapshotIndex)
+				return
+			}
+			kv.lastAppliedIndex = msg.SnapshotIndex
 			DPrintf("{Server %d} Read a snapshot at Index: %d", kv.me, msg.SnapshotIndex)
 			kv.mu.Lock()
 			kv.readSnapshot(msg.Snapshot)
@@ -237,4 +242,5 @@ func (kv *KVServer) readSnapshot(data []byte) {
 	if d.Decode(&kv.database) != nil || d.Decode(&kv.clients) != nil {
 		panic("KVServer read snapshot fail")
 	}
+	DPrintf("{Server %d} Now database is %v", kv.me, kv.database)
 }
