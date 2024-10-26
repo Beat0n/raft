@@ -20,10 +20,9 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	database         map[string]string
-	clients          map[int64]int32
-	blockedOps       map[int]chan *OpResult
-	lastAppliedIndex int
+	database   map[string]string
+	clients    map[int64]int32
+	blockedOps map[int]chan *OpResult
 }
 
 // the tester calls Kill() when a KVServer instance won't
@@ -73,7 +72,6 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.database = make(map[string]string)
 	kv.clients = make(map[int64]int32)
 	kv.blockedOps = make(map[int]chan *OpResult)
-	kv.lastAppliedIndex = 0
 	kv.readSnapshot(kv.rf.GetPersister().ReadSnapshot())
 
 	// You may need initialization code here.
@@ -85,7 +83,6 @@ func (kv *KVServer) applier() {
 	for !kv.killed() {
 		msg := <-kv.applyCh
 		if msg.CommandValid {
-			kv.lastAppliedIndex++
 			op := msg.Command.(Op)
 			index := msg.CommandIndex
 			kv.processOp(&op, index)
@@ -97,11 +94,6 @@ func (kv *KVServer) applier() {
 				kv.rf.Snapshot(index, snapshot)
 			}
 		} else if msg.SnapshotValid {
-			if kv.lastAppliedIndex >= msg.SnapshotIndex {
-				DPrintf("{Server %d} Refuse a outdated snapshot at Index: %d", kv.me, msg.SnapshotIndex)
-				continue
-			}
-			kv.lastAppliedIndex = msg.SnapshotIndex
 			DPrintf("{Server %d} Read a snapshot at Index: %d", kv.me, msg.SnapshotIndex)
 			kv.mu.Lock()
 			kv.readSnapshot(msg.Snapshot)
@@ -242,5 +234,5 @@ func (kv *KVServer) readSnapshot(data []byte) {
 	if d.Decode(&kv.database) != nil || d.Decode(&kv.clients) != nil {
 		panic("KVServer read snapshot fail")
 	}
-	DPrintf("{Server %d} Now database is %v", kv.me, kv.database)
+	//DPrintf("{Server %d} Now database is %v", kv.me, kv.database)
 }
