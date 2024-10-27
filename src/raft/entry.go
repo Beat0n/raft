@@ -70,7 +70,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			reply.Success = false
 			reply.XTerm = rf.logs[prevIndex].Term
 			reply.XIndex = rf.findFirstLogByTerm(rf.logs[prevIndex].Term)
-			rf.logs = rf.logs[:prevIndex]
+			copy(rf.logs, rf.logs[:prevIndex])
 		} else {
 			reply.Success = true
 			rf.appendLogs(args)
