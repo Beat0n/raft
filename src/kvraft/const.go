@@ -2,7 +2,7 @@ package kvraft
 
 import "time"
 
-const Debug = true
+const Debug = false
 
 const (
 	PUT    = "Put"
@@ -25,5 +25,5 @@ const (
 	CommitTimerTime        = time.Millisecond * 200
 	RPCTries               = 4
 	SleepTimeWhenNoLeaders = time.Millisecond * 5
-	ApplyChanSize          = 100
+	ApplyChanSize          = 0
 )

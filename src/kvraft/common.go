@@ -1,6 +1,8 @@
 package kvraft
 
-import "log"
+import (
+	"log"
+)
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {

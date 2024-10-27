@@ -8,14 +8,16 @@ type InstallSnapshotArgs struct {
 }
 
 type InstallSnapshotReply struct {
-	Term int
+	Term              int
+	LastIncludedIndex int
 }
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	defer func() {
 		reply.Term = rf.currentTerm
+		reply.LastIncludedIndex = rf.lastIncluded()
+		rf.mu.Unlock()
 	}()
 	DPrintf2(rf, "receive snapshot with LastIncludedIndex: %d", args.LastIncludedIndex)
 	if args.Term < rf.currentTerm {
@@ -125,6 +127,6 @@ func (rf *Raft) sendSnapshot(server int, args *InstallSnapshotArgs, reply *Insta
 		rf.setNewTerm(reply.Term)
 		return
 	}
-	matchIndex := args.LastIncludedIndex
+	matchIndex := reply.LastIncludedIndex
 	rf.updateMatchIndex(server, matchIndex)
 }
