@@ -6,9 +6,7 @@ import (
 	"6.5840/raft"
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,7 +29,7 @@ type KVServer struct {
 	blockedOps       map[int]chan *OpResult
 	lastAppliedIndex int
 
-	// just for log
+	// check if the first start
 	notFirstStart bool
 }
 
@@ -85,7 +83,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.readSnapshot(kv.rf.GetPersister().ReadSnapshot())
 	if kv.notFirstStart {
 		// restart
-		kv.loadLastAppliedIndex()
+		//kv.loadLastAppliedIndex()
 	} else {
 		// first start
 		kv.lastAppliedIndex = 0
@@ -252,6 +250,7 @@ func (kv *KVServer) makeSnapshot() []byte {
 	e.Encode(kv.database)
 	e.Encode(kv.clients)
 	e.Encode(kv.notFirstStart)
+	e.Encode(kv.lastAppliedIndex)
 	return w.Bytes()
 }
 
@@ -261,35 +260,35 @@ func (kv *KVServer) readSnapshot(data []byte) {
 	}
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
-	if d.Decode(&kv.database) != nil || d.Decode(&kv.clients) != nil || d.Decode(&kv.notFirstStart) != nil {
+	if d.Decode(&kv.database) != nil || d.Decode(&kv.clients) != nil || d.Decode(&kv.notFirstStart) != nil || d.Decode(&kv.lastAppliedIndex) != nil {
 		panic("KVServer read snapshot fail")
 	}
 	//DPrintf("{Server %d} Now database is %v", kv.me, kv.database)
 }
 
-func (kv *KVServer) saveLastAppliedIndex() {
-	numStr := strconv.Itoa(kv.lastAppliedIndex)
-	filename := fmt.Sprintf("logs/%s/server-%d/lastApply.log", LogDirname, kv.me)
-	ioutil.WriteFile(filename, []byte(numStr), 0644)
-}
-
-func (kv *KVServer) loadLastAppliedIndex() {
-	filename := fmt.Sprintf("logs/%s/server-%d/lastApply.log", LogDirname, kv.me)
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		kv.lastAppliedIndex = 0
-	}
-	numStr := string(data)
-	num, err := strconv.Atoi(numStr)
-	if err != nil {
-		panic(err)
-	}
-	kv.lastAppliedIndex = num
-}
+//func (kv *KVServer) saveLastAppliedIndex() {
+//	numStr := strconv.Itoa(kv.lastAppliedIndex)
+//	filename := fmt.Sprintf("logs/%s/server-%d/lastApply.log", LogDirname, kv.me)
+//	ioutil.WriteFile(filename, []byte(numStr), 0644)
+//}
+//
+//func (kv *KVServer) loadLastAppliedIndex() {
+//	filename := fmt.Sprintf("logs/%s/server-%d/lastApply.log", LogDirname, kv.me)
+//	data, err := ioutil.ReadFile(filename)
+//	if err != nil {
+//		kv.lastAppliedIndex = 0
+//	}
+//	numStr := string(data)
+//	num, err := strconv.Atoi(numStr)
+//	if err != nil {
+//		panic(err)
+//	}
+//	kv.lastAppliedIndex = num
+//}
 
 func (kv *KVServer) changeLastAppliedIndex(index int) {
 	kv.lastAppliedIndex = index
-	kv.saveLastAppliedIndex()
+	//kv.saveLastAppliedIndex()
 }
 
 func (kv *KVServer) mkdir() {
