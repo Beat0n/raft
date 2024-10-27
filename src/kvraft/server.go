@@ -5,8 +5,6 @@ import (
 	"6.5840/labrpc"
 	"6.5840/raft"
 	"bytes"
-	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,9 +26,6 @@ type KVServer struct {
 	clients          map[int64]int32
 	blockedOps       map[int]chan *OpResult
 	lastAppliedIndex int
-
-	// check if the first start
-	notFirstStart bool
 }
 
 // the tester calls Kill() when a KVServer instance won't
@@ -80,18 +75,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.database = make(map[string]string)
 	kv.clients = make(map[int64]int32)
 	kv.blockedOps = make(map[int]chan *OpResult)
+	kv.lastAppliedIndex = 0
 	kv.readSnapshot(kv.rf.GetPersister().ReadSnapshot())
-	if kv.notFirstStart {
-		// restart
-		//kv.loadLastAppliedIndex()
-	} else {
-		// first start
-		kv.lastAppliedIndex = 0
-		kv.notFirstStart = true
-		kv.mkdir()
-		kv.makeSnapshot()
-	}
-	kv.logCommit("StartKVServer, Max Log Index[%d]", kv.lastAppliedIndex)
+	//kv.logCommit("StartKVServer, Max Log Index[%d]", kv.lastAppliedIndex)
 
 	// You may need initialization code here.
 	go kv.applier()
@@ -104,8 +90,8 @@ func (kv *KVServer) applier() {
 		if msg.CommandValid && msg.CommandIndex > kv.lastAppliedIndex {
 			op := msg.Command.(Op)
 			index := msg.CommandIndex
-			kv.changeLastAppliedIndex(index)
-			kv.logCommit("Commit Log[%d]", index)
+			kv.lastAppliedIndex = index
+			//kv.logCommit("Commit Log[%d]", index)
 			kv.processOp(&op, index)
 			if kv.maxraftstate != -1 && kv.rf.GetPersister().RaftStateSize() > kv.maxraftstate {
 				kv.mu.Lock()
@@ -118,9 +104,9 @@ func (kv *KVServer) applier() {
 			DPrintf("{Server %d} Commit snapshot[%d]", kv.me, msg.SnapshotIndex)
 			kv.mu.Lock()
 			if msg.SnapshotIndex > kv.lastAppliedIndex {
-				kv.logCommit("Read snapshot[%d]", msg.SnapshotIndex)
+				//kv.logCommit("Read snapshot[%d]", msg.SnapshotIndex)
 				kv.readSnapshot(msg.Snapshot)
-				kv.changeLastAppliedIndex(msg.SnapshotIndex)
+				kv.lastAppliedIndex = msg.SnapshotIndex
 			}
 			kv.mu.Unlock()
 		}
@@ -249,7 +235,6 @@ func (kv *KVServer) makeSnapshot() []byte {
 	e := labgob.NewEncoder(w)
 	e.Encode(kv.database)
 	e.Encode(kv.clients)
-	e.Encode(kv.notFirstStart)
 	e.Encode(kv.lastAppliedIndex)
 	return w.Bytes()
 }
@@ -260,49 +245,8 @@ func (kv *KVServer) readSnapshot(data []byte) {
 	}
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
-	if d.Decode(&kv.database) != nil || d.Decode(&kv.clients) != nil || d.Decode(&kv.notFirstStart) != nil || d.Decode(&kv.lastAppliedIndex) != nil {
+	if d.Decode(&kv.database) != nil || d.Decode(&kv.clients) != nil || d.Decode(&kv.lastAppliedIndex) != nil {
 		panic("KVServer read snapshot fail")
 	}
 	//DPrintf("{Server %d} Now database is %v", kv.me, kv.database)
-}
-
-//func (kv *KVServer) saveLastAppliedIndex() {
-//	numStr := strconv.Itoa(kv.lastAppliedIndex)
-//	filename := fmt.Sprintf("logs/%s/server-%d/lastApply.log", LogDirname, kv.me)
-//	ioutil.WriteFile(filename, []byte(numStr), 0644)
-//}
-//
-//func (kv *KVServer) loadLastAppliedIndex() {
-//	filename := fmt.Sprintf("logs/%s/server-%d/lastApply.log", LogDirname, kv.me)
-//	data, err := ioutil.ReadFile(filename)
-//	if err != nil {
-//		kv.lastAppliedIndex = 0
-//	}
-//	numStr := string(data)
-//	num, err := strconv.Atoi(numStr)
-//	if err != nil {
-//		panic(err)
-//	}
-//	kv.lastAppliedIndex = num
-//}
-
-func (kv *KVServer) changeLastAppliedIndex(index int) {
-	kv.lastAppliedIndex = index
-	//kv.saveLastAppliedIndex()
-}
-
-func (kv *KVServer) mkdir() {
-	os.Mkdir(fmt.Sprintf("logs/%s", LogDirname), 0755)
-	err := os.Mkdir(fmt.Sprintf("logs/%s/server-%d", LogDirname, kv.me), 0755)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (kv *KVServer) logCommit(format string, a ...interface{}) {
-	filename := fmt.Sprintf("logs/%s/server-%d/commit.log", LogDirname, kv.me)
-	msg := fmt.Sprintf(format, a...)
-	file, _ := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	defer file.Close()
-	file.WriteString(msg + "\n")
 }
