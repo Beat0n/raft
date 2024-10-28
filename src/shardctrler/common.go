@@ -1,5 +1,10 @@
 package shardctrler
 
+import (
+	"log"
+	"time"
+)
+
 //
 // Shard controler: assigns shards to replication groups.
 //
@@ -28,46 +33,121 @@ type Config struct {
 	Groups map[int][]string // gid -> servers[]
 }
 
+type Op struct {
+	// Your definitions here.
+	// Field names must start with capital letters,
+	// otherwise RPC will break.
+	OpType    string
+	ClientId  int64
+	RequestId int32
+	// Join
+	Servers map[int][]string // new GID -> servers mappings
+	// Leave
+	GIDs []int
+	// Move
+	Shard int
+	GID   int
+	// Query
+	Num int // desired config number
+}
+
+func compareOP(op1, op2 *Op) bool {
+	if op1.OpType != op2.OpType || op1.ClientId != op2.ClientId || op1.RequestId != op2.RequestId {
+		return false
+	}
+	switch op1.OpType {
+	case JoinOP:
+		return &op1.Servers == &op1.Servers
+	case LeaveOP:
+		return &op1.GIDs == &op1.GIDs
+	case MoveOp:
+		return op1.Shard == op2.Shard && op1.GID == op2.GID
+	case QueryOp:
+		return op1.Num == op2.Num
+	}
+	return false
+}
+
+type OpResult struct {
+	op     *Op
+	Err    Err
+	Config Config
+}
+
 const (
-	OK = "OK"
+	JoinOP  = "Join"
+	LeaveOP = "Leave"
+	MoveOp  = "Move"
+	QueryOp = "Query"
+)
+
+const (
+	OK               Err = "OK"
+	ErrWrongLeader   Err = "WrongLeader"
+	ErrInvalidArgs   Err = "InvalidArgs"
+	ErrCommitTimeout Err = "ErrCommitTimeout"
+	ErrCommitFailed  Err = "ErrCommitFailed"
+	ErrDupReq        Err = "ErrDupReq"
+	CommitTimerTime      = time.Millisecond * 200
 )
 
 type Err string
 
 type JoinArgs struct {
-	Servers map[int][]string // new GID -> servers mappings
+	ClientId  int64
+	RequestId int32
+	Servers   map[int][]string // new GID -> servers mappings
 }
 
 type JoinReply struct {
-	WrongLeader bool
-	Err         Err
+	Err Err
 }
 
 type LeaveArgs struct {
-	GIDs []int
+	ClientId  int64
+	RequestId int32
+	GIDs      []int
 }
 
 type LeaveReply struct {
-	WrongLeader bool
-	Err         Err
+	Err Err
 }
 
 type MoveArgs struct {
-	Shard int
-	GID   int
+	ClientId  int64
+	RequestId int32
+	Shard     int
+	GID       int
 }
 
 type MoveReply struct {
-	WrongLeader bool
-	Err         Err
+	Err Err
 }
 
 type QueryArgs struct {
-	Num int // desired config number
+	ClientId  int64
+	RequestId int32
+	Num       int // desired config number
 }
 
 type QueryReply struct {
-	WrongLeader bool
-	Err         Err
-	Config      Config
+	Err    Err
+	Config Config
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// Debugging
+const Debug = true
+
+func DPrintf(format string, a ...interface{}) {
+	if Debug {
+		log.Printf(format, a...)
+	}
+	return
 }

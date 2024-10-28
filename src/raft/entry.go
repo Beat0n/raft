@@ -28,7 +28,7 @@ func (rf *Raft) appendLogs(args *AppendEntriesArgs) {
 	i := args.PrevLogIndex + 1 - rf.lastIncluded()
 	j := 0
 	for i < len(rf.logs) && j < len(args.Entries) {
-		if rf.logs[i] != args.Entries[j] {
+		if rf.logs[i].Index != args.Entries[j].Index || rf.logs[i].Term != args.Entries[j].Term {
 			rf.logs = append(rf.logs[:i], args.Entries[j:]...)
 			DPrintf2(rf, "length: %d, logs: %v", len(rf.logs), rf.logs)
 			return

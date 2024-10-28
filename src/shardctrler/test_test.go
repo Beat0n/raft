@@ -88,6 +88,7 @@ func TestBasic(t *testing.T) {
 	fmt.Printf("Test: Basic leave/join ...\n")
 
 	cfa := make([]Config, 6)
+	//ck.Join(map[int][]string{100: []string{"x", "y", "z"}})
 	cfa[0] = ck.Query(-1)
 
 	check(t, []int{}, ck)

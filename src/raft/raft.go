@@ -159,7 +159,11 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.logs = append(rf.logs, entry{command, term, index})
 	rf.nMatch[index] = 1
 	rf.persist()
-	rf.sendEntries(false)
+	go func() {
+		rf.mu.Lock()
+		rf.sendEntries(false)
+		rf.mu.Unlock()
+	}()
 	return index, term, true
 }
 

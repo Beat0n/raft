@@ -104,6 +104,7 @@ func (kv *KVServer) applier() {
 			DPrintf("{Server %d} Commit snapshot[%d]", kv.me, msg.SnapshotIndex)
 			kv.mu.Lock()
 			if msg.SnapshotIndex > kv.lastAppliedIndex {
+				DPrintf("{Server %d} Read snapshot[%d]", kv.me, msg.SnapshotIndex)
 				//kv.logCommit("Read snapshot[%d]", msg.SnapshotIndex)
 				kv.readSnapshot(msg.Snapshot)
 				kv.lastAppliedIndex = msg.SnapshotIndex
@@ -122,13 +123,13 @@ func (kv *KVServer) Command(args *CommandArgs, reply *CommandReply) {
 		Value:     args.Value,
 	}
 
-	prepareErr, index := kv.prepare(op)
+	prepareErr, index, ch := kv.prepare(op)
 	if prepareErr != OK {
 		reply.Err = prepareErr
 		return
 	}
 
-	reply.Err, reply.Value = kv.waitForCommit(op, index)
+	reply.Err, reply.Value = kv.waitForCommit(op, index, ch)
 }
 
 func (kv *KVServer) processOp(op *Op, index int) {
@@ -139,8 +140,8 @@ func (kv *KVServer) processOp(op *Op, index int) {
 	}
 	kv.mu.Lock()
 	defer func() {
-		kv.mu.Unlock()
 		kv.notify(&opResult, index)
+		kv.mu.Unlock()
 	}()
 	if op.OpType == GET {
 		exist := false
@@ -170,11 +171,11 @@ func (kv *KVServer) processOp(op *Op, index int) {
 }
 
 func (kv *KVServer) notify(result *OpResult, index int) {
-	kv.mu.Lock()
 	ch := kv.GetBlockedOpCh(index, false)
-	kv.mu.Unlock()
 	if ch != nil {
+		DPrintf("{Server %d} notify index: %d", kv.me, index)
 		ch <- result
+		DPrintf("{Server %d} notify index: %d done!", kv.me, index)
 	}
 }
 
@@ -195,20 +196,19 @@ func (kv *KVServer) isOpExecuted(clientId int64, opId int32) bool {
 	return opId <= executedOpId
 }
 
-func (kv *KVServer) prepare(op *Op) (Err, int) {
+func (kv *KVServer) prepare(op *Op) (Err, int, chan *OpResult) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
 	index, _, isLeader := kv.rf.Start(*op)
 	if !isLeader {
-		return ErrWrongLeader, -1
+		return ErrWrongLeader, -1, nil
 	}
+	ch := kv.GetBlockedOpCh(index, true)
 	DPrintf("{Server %d} prepare log[%d] | request[%d] from {Client %d} |", kv.me, index, op.RequestId, op.ClientId)
-	return OK, index
+	return OK, index, ch
 }
 
-func (kv *KVServer) waitForCommit(op *Op, index int) (Err, string) {
-	kv.mu.Lock()
-	ch := kv.GetBlockedOpCh(index, true)
-	kv.mu.Unlock()
-
+func (kv *KVServer) waitForCommit(op *Op, index int, ch chan *OpResult) (Err, string) {
 	var err Err
 	var value string
 
