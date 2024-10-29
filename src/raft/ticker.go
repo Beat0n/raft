@@ -47,6 +47,7 @@ func (rf *Raft) applier() {
 				CommandValid: true,
 				Command:      log.Command,
 				CommandIndex: log.Index,
+				CommandTerm:  log.Term,
 			})
 		}
 		rf.mu.Unlock()

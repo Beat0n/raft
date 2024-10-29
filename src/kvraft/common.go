@@ -71,3 +71,7 @@ type CommandReply struct {
 	Err   Err
 	Value string
 }
+
+func hash(index, term int) int64 {
+	return int64(index<<31 + term)
+}

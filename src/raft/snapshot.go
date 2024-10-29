@@ -35,7 +35,12 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}
 	oldLogs := rf.logs
 	if rf.lastLog().Index > args.LastIncludedIndex {
-		rf.shrinkLogs(args.LastIncludedIndex - rf.lastIncluded())
+		if args.LastIncludedIndex == rf.lastIncluded() {
+			DPrintf2(rf, "InstallSnapshot: same snapshot index, prev term: %d, now term: %d", rf.lastIncluded(), args.LastIncludedIndex)
+			rf.logs[0].Term = args.LastIncludedTerm
+		} else {
+			rf.shrinkLogs(args.LastIncludedIndex - rf.lastIncluded())
+		}
 	} else {
 		rf.logs = []entry{{nil, args.LastIncludedTerm, args.LastIncludedIndex}}
 	}
@@ -114,9 +119,6 @@ func (rf *Raft) lastIncluded() int {
 
 func (rf *Raft) sendSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	DPrintf2(rf, "send snapshot to %s with LastIncludedIndex: %d, data bytes: %d", ServerName(server, Follower), args.LastIncludedIndex, len(args.Data))
-	if !rf.sendRPC(server, "Raft.InstallSnapshot", args, reply) {
-		return
-	}
 	if !rf.sendRPC(server, "Raft.InstallSnapshot", args, reply) {
 		return
 	}

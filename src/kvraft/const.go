@@ -25,5 +25,5 @@ const (
 	CommitTimerTime        = time.Millisecond * 200
 	RPCTries               = 4
 	SleepTimeWhenNoLeaders = time.Millisecond * 5
-	ApplyChanSize          = 0
+	ApplyChanSize          = 100
 )

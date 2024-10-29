@@ -24,7 +24,7 @@ type KVServer struct {
 	// Your definitions here.
 	database         map[string]string
 	clients          map[int64]int32
-	blockedOps       map[int]chan *OpResult
+	blockedOps       map[int64]chan *OpResult
 	lastAppliedIndex int
 }
 
@@ -74,7 +74,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.database = make(map[string]string)
 	kv.clients = make(map[int64]int32)
-	kv.blockedOps = make(map[int]chan *OpResult)
+	kv.blockedOps = make(map[int64]chan *OpResult)
 	kv.lastAppliedIndex = 0
 	kv.readSnapshot(kv.rf.GetPersister().ReadSnapshot())
 	//kv.logCommit("StartKVServer, Max Log Index[%d]", kv.lastAppliedIndex)
@@ -90,9 +90,10 @@ func (kv *KVServer) applier() {
 		if msg.CommandValid && msg.CommandIndex > kv.lastAppliedIndex {
 			op := msg.Command.(Op)
 			index := msg.CommandIndex
+			term := msg.CommandTerm
 			kv.lastAppliedIndex = index
 			//kv.logCommit("Commit Log[%d]", index)
-			kv.processOp(&op, index)
+			kv.processOp(&op, index, term)
 			if kv.maxraftstate != -1 && kv.rf.GetPersister().RaftStateSize() > kv.maxraftstate {
 				kv.mu.Lock()
 				snapshot := kv.makeSnapshot()
@@ -123,16 +124,16 @@ func (kv *KVServer) Command(args *CommandArgs, reply *CommandReply) {
 		Value:     args.Value,
 	}
 
-	prepareErr, index, ch := kv.prepare(op)
+	prepareErr, index, term, ch := kv.prepare(op)
 	if prepareErr != OK {
 		reply.Err = prepareErr
 		return
 	}
 
-	reply.Err, reply.Value = kv.waitForCommit(op, index, ch)
+	reply.Err, reply.Value = kv.waitForCommit(op, index, term, ch)
 }
 
-func (kv *KVServer) processOp(op *Op, index int) {
+func (kv *KVServer) processOp(op *Op, index, term int) {
 	opResult := OpResult{
 		op:    op,
 		Value: op.Value,
@@ -140,7 +141,7 @@ func (kv *KVServer) processOp(op *Op, index int) {
 	}
 	kv.mu.Lock()
 	defer func() {
-		kv.notify(&opResult, index)
+		kv.notify(&opResult, index, term)
 		kv.mu.Unlock()
 	}()
 	if op.OpType == GET {
@@ -170,8 +171,8 @@ func (kv *KVServer) processOp(op *Op, index int) {
 	}
 }
 
-func (kv *KVServer) notify(result *OpResult, index int) {
-	ch := kv.GetBlockedOpCh(index, false)
+func (kv *KVServer) notify(result *OpResult, index, term int) {
+	ch := kv.GetBlockedOpCh(index, term, false)
 	if ch != nil {
 		DPrintf("{Server %d} notify index: %d", kv.me, index)
 		ch <- result
@@ -179,11 +180,12 @@ func (kv *KVServer) notify(result *OpResult, index int) {
 	}
 }
 
-func (kv *KVServer) GetBlockedOpCh(index int, create bool) chan *OpResult {
-	ch, ok := kv.blockedOps[index]
+func (kv *KVServer) GetBlockedOpCh(index, term int, create bool) chan *OpResult {
+	h := hash(index, term)
+	ch, ok := kv.blockedOps[h]
 	if !ok && create {
 		ch = make(chan *OpResult, 1)
-		kv.blockedOps[index] = ch
+		kv.blockedOps[h] = ch
 	}
 	return ch
 }
@@ -196,19 +198,20 @@ func (kv *KVServer) isOpExecuted(clientId int64, opId int32) bool {
 	return opId <= executedOpId
 }
 
-func (kv *KVServer) prepare(op *Op) (Err, int, chan *OpResult) {
+func (kv *KVServer) prepare(op *Op) (Err, int, int, chan *OpResult) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	index, _, isLeader := kv.rf.Start(*op)
+	index, term, isLeader := kv.rf.Start(*op)
 	if !isLeader {
-		return ErrWrongLeader, -1, nil
+		return ErrWrongLeader, -1, -1, nil
 	}
-	ch := kv.GetBlockedOpCh(index, true)
+	DPrintf("[Term %d] | Leader : %d", term, kv.me)
+	ch := kv.GetBlockedOpCh(index, term, true)
 	DPrintf("{Server %d} prepare log[%d] | request[%d] from {Client %d} |", kv.me, index, op.RequestId, op.ClientId)
-	return OK, index, ch
+	return OK, index, term, ch
 }
 
-func (kv *KVServer) waitForCommit(op *Op, index int, ch chan *OpResult) (Err, string) {
+func (kv *KVServer) waitForCommit(op *Op, index, term int, ch chan *OpResult) (Err, string) {
 	var err Err
 	var value string
 
@@ -225,7 +228,7 @@ func (kv *KVServer) waitForCommit(op *Op, index int, ch chan *OpResult) (Err, st
 		err = result.Err
 	}
 	kv.mu.Lock()
-	delete(kv.blockedOps, index)
+	delete(kv.blockedOps, hash(index, term))
 	kv.mu.Unlock()
 	return err, value
 }
