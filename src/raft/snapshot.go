@@ -44,11 +44,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	} else {
 		rf.logs = []entry{{nil, args.LastIncludedTerm, args.LastIncludedIndex}}
 	}
-	toBeApplied := false
-	if rf.lastApplied < args.LastIncludedIndex {
-		rf.lastApplied = args.LastIncludedIndex
-		toBeApplied = true
-	}
 	if rf.commitIndex < args.LastIncludedIndex {
 		DPrintf2(rf, "InstallSnapshot: Update commit index to %d", args.LastIncludedIndex)
 		rf.commitIndex = args.LastIncludedIndex
@@ -56,14 +51,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	raftState := rf.encodeState()
 	rf.persister.Save(raftState, args.Data)
 	DPrintf2(rf, "Before: %v, After Install snapshot, logs: %v", oldLogs, rf.logs)
-	if toBeApplied {
-		rf.applyCh <- ApplyMsg{
-			SnapshotValid: true,
-			SnapshotIndex: args.LastIncludedIndex,
-			SnapshotTerm:  args.LastIncludedTerm,
-			Snapshot:      args.Data,
-		}
-	}
 }
 
 // the service says it has created a snapshot that has
