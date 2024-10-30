@@ -94,7 +94,7 @@ func (kv *KVServer) applier() {
 			kv.lastAppliedIndex = index
 			//kv.logCommit("Commit Log[%d]", index)
 			kv.processOp(&op, index, term)
-			if kv.maxraftstate != -1 && kv.rf.GetPersister().RaftStateSize() > kv.maxraftstate {
+			if kv.maxraftstate != -1 && 10*kv.rf.GetPersister().RaftStateSize() > 8*kv.maxraftstate {
 				kv.mu.Lock()
 				snapshot := kv.makeSnapshot()
 				kv.mu.Unlock()
@@ -141,8 +141,13 @@ func (kv *KVServer) processOp(op *Op, index, term int) {
 	}
 	kv.mu.Lock()
 	defer func() {
-		kv.notify(&opResult, index, term)
+		ch := kv.GetBlockedOpCh(index, term, false)
 		kv.mu.Unlock()
+		if ch != nil {
+			DPrintf("{Server %d} notify index: %d", kv.me, index)
+			ch <- &opResult
+			DPrintf("{Server %d} notify index: %d done!", kv.me, index)
+		}
 	}()
 	if op.OpType == GET {
 		exist := false
@@ -168,15 +173,6 @@ func (kv *KVServer) processOp(op *Op, index, term int) {
 			DPrintf("{Server %d} Duplicate request[%d] from {Client %d} | %s Key: %s Value: %s", kv.me, op.RequestId, op.ClientId, op.OpType, op.Key, op.Value)
 			opResult.Err = ErrDupReq
 		}
-	}
-}
-
-func (kv *KVServer) notify(result *OpResult, index, term int) {
-	ch := kv.GetBlockedOpCh(index, term, false)
-	if ch != nil {
-		DPrintf("{Server %d} notify index: %d", kv.me, index)
-		ch <- result
-		DPrintf("{Server %d} notify index: %d done!", kv.me, index)
 	}
 }
 

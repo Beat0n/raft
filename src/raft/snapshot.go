@@ -14,10 +14,20 @@ type InstallSnapshotReply struct {
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
+	toBeApplied := false
 	defer func() {
 		reply.Term = rf.currentTerm
 		reply.LastIncludedIndex = rf.lastIncluded()
 		rf.mu.Unlock()
+		if toBeApplied {
+			rf.applyCh <- ApplyMsg{
+				SnapshotValid: true,
+				SnapshotIndex: args.LastIncludedIndex,
+				SnapshotTerm:  args.LastIncludedTerm,
+				Snapshot:      args.Data,
+			}
+			DPrintf2(rf, "apply snapshot | LastIncludedIndex: %d", args.LastIncludedIndex)
+		}
 	}()
 	DPrintf2(rf, "receive snapshot with LastIncludedIndex: %d", args.LastIncludedIndex)
 	if args.Term < rf.currentTerm {
@@ -39,12 +49,15 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 			DPrintf2(rf, "InstallSnapshot: same snapshot index, prev term: %d, now term: %d", rf.lastIncluded(), args.LastIncludedIndex)
 			rf.logs[0].Term = args.LastIncludedTerm
 		} else {
-			rf.shrinkLogs(args.LastIncludedIndex - rf.lastIncluded())
+			rf.shrinkLogs(args.LastIncludedIndex - rf.lastIncluded() + 1)
+			rf.logs[0].Term = args.LastIncludedTerm
+			if rf.lastIncluded() != args.LastIncludedIndex {
+				panic("not the same LastIncludedIndex")
+			}
 		}
 	} else {
 		rf.logs = []entry{{nil, args.LastIncludedTerm, args.LastIncludedIndex}}
 	}
-	toBeApplied := false
 	if rf.lastApplied < args.LastIncludedIndex {
 		rf.lastApplied = args.LastIncludedIndex
 		toBeApplied = true
@@ -56,14 +69,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	raftState := rf.encodeState()
 	rf.persister.Save(raftState, args.Data)
 	DPrintf2(rf, "Before: %v, After Install snapshot, logs: %v", oldLogs, rf.logs)
-	if toBeApplied {
-		rf.applyCh <- ApplyMsg{
-			SnapshotValid: true,
-			SnapshotIndex: args.LastIncludedIndex,
-			SnapshotTerm:  args.LastIncludedTerm,
-			Snapshot:      args.Data,
-		}
-	}
 }
 
 // the service says it has created a snapshot that has
@@ -125,6 +130,7 @@ func (rf *Raft) sendSnapshot(server int, args *InstallSnapshotArgs, reply *Insta
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	// handle reply
+	DPrintf2(rf, "send snapshot to %s with LastIncludedIndex: %d | reply: %+v | next: %d", ServerName(server, Follower), args.LastIncludedIndex, *reply, rf.nextIndex[server])
 	if reply.Term > rf.currentTerm {
 		rf.setNewTerm(reply.Term)
 		return

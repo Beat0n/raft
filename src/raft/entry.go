@@ -219,7 +219,8 @@ func (rf *Raft) findFirstLogByTerm(term int) int {
 }
 
 func (rf *Raft) updateMatchIndex(server, matchIndex int) {
-	if matchIndex > rf.matchIndex[server] {
+	DPrintf2(rf, "{Server %d} matchIndex: %d, before matchIndex: %d, nextIndex: %d", server, matchIndex, rf.matchIndex[server], rf.nextIndex[server])
+	if matchIndex >= rf.nextIndex[server] {
 		rf.matchIndex[server] = matchIndex
 		rf.nextIndex[server] = matchIndex + 1
 		if matchIndex <= rf.commitIndex {
