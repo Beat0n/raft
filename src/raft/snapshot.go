@@ -18,7 +18,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	defer func() {
 		reply.Term = rf.currentTerm
 		reply.LastIncludedIndex = rf.lastIncluded()
-		rf.mu.Unlock()
 		if toBeApplied {
 			rf.applyCh <- ApplyMsg{
 				SnapshotValid: true,
@@ -28,6 +27,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 			}
 			DPrintf2(rf, "apply snapshot | LastIncludedIndex: %d", args.LastIncludedIndex)
 		}
+		rf.mu.Unlock()
 	}()
 	DPrintf2(rf, "receive snapshot with LastIncludedIndex: %d", args.LastIncludedIndex)
 	if args.Term < rf.currentTerm {

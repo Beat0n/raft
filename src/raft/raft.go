@@ -20,6 +20,7 @@ package raft
 import (
 	"6.5840/labgob"
 	"bytes"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -159,7 +160,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	DPrintf("---Term %d--- %s append log{command: %v, index: %d}\n", rf.currentTerm, ServerName(rf.me, rf.role), command, index)
 	rf.logs = append(rf.logs, entry{command, term, index})
 	rf.nMatch[index] = 1
-
 	rf.persist()
 	rf.sendEntries(false)
 	return index, term, true
@@ -201,6 +201,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
+	rand.Seed(int64(me))
 	rf.applyCh = applyCh
 	rf.heartBeatTime = HeartBeatTime
 	rf.logs = make([]entry, 1)
@@ -245,6 +246,7 @@ func (rf *Raft) sendRPC(server int, svcMeth string, args interface{}, reply inte
 		if rf.peers[server].Call(svcMeth, args, reply) {
 			return true
 		}
+		time.Sleep(RPCSleepTime)
 	}
 	return false
 }

@@ -150,7 +150,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		return
 	}
 	if reply.Term > rf.currentTerm {
-		rf.setNewTerm(args.Term)
+		rf.setNewTerm(reply.Term)
 		*done = true
 		return
 	}
@@ -197,6 +197,7 @@ func (rf *Raft) backup(server int, args *AppendEntriesArgs, reply *AppendEntries
 		} else {
 			rf.nextIndex[server] = rf.findFirstLogByTerm(reply.XTerm)
 		}
+		rf.matchIndex[server] = rf.nextIndex[server] - 1
 	}
 }
 
@@ -219,7 +220,6 @@ func (rf *Raft) findFirstLogByTerm(term int) int {
 }
 
 func (rf *Raft) updateMatchIndex(server, matchIndex int) {
-	DPrintf2(rf, "{Server %d} matchIndex: %d, before matchIndex: %d, nextIndex: %d", server, matchIndex, rf.matchIndex[server], rf.nextIndex[server])
 	if matchIndex >= rf.nextIndex[server] {
 		rf.matchIndex[server] = matchIndex
 		rf.nextIndex[server] = matchIndex + 1

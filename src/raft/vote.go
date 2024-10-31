@@ -24,13 +24,18 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.Term = rf.currentTerm
 		return
 	}
+	toBePersist := false
 	if args.Term > rf.currentTerm {
 		rf.setNewTerm(args.Term)
+		toBePersist = true
 	}
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.checkUp2Date(args) {
 		rf.grantVote(args, reply)
+		toBePersist = true
 	}
-
+	if toBePersist {
+		rf.persist()
+	}
 	reply.Term = rf.currentTerm
 	DPrintf("---Term %d--- %s send reply for request vote to %s, reply %v\n", rf.currentTerm, ServerName(rf.me, rf.role), ServerName(args.CandidateId, Candidate), reply.VoteGranted)
 }
@@ -47,5 +52,4 @@ func (rf *Raft) grantVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.votedFor = args.CandidateId
 	rf.role = Follower
 	rf.currentTerm = args.Term
-	rf.persist()
 }
