@@ -14,21 +14,21 @@ type InstallSnapshotReply struct {
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
-	toBeApplied := false
+	//toBeApplied := false
 	defer func() {
-		reply.Term = rf.currentTerm
 		reply.LastIncludedIndex = rf.lastIncluded()
-		if toBeApplied {
-			DPrintf2(rf, "applying snapshot... | LastIncludedIndex: %d", args.LastIncludedIndex)
-			rf.applyCh <- ApplyMsg{
-				SnapshotValid: true,
-				SnapshotIndex: args.LastIncludedIndex,
-				SnapshotTerm:  args.LastIncludedTerm,
-				Snapshot:      args.Data,
-			}
-			DPrintf2(rf, "apply snapshot | LastIncludedIndex: %d", args.LastIncludedIndex)
-		}
+		reply.Term = rf.currentTerm
 		rf.mu.Unlock()
+		//if toBeApplied {
+		//	DPrintf2(rf, "applying snapshot... | LastIncludedIndex: %d", args.LastIncludedIndex)
+		//	rf.applyCh <- ApplyMsg{
+		//		SnapshotValid: true,
+		//		SnapshotIndex: args.LastIncludedIndex,
+		//		SnapshotTerm:  args.LastIncludedTerm,
+		//		Snapshot:      args.Data,
+		//	}
+		//	DPrintf2(rf, "apply snapshot | LastIncludedIndex: %d", args.LastIncludedIndex)
+		//}
 	}()
 	DPrintf2(rf, "receive snapshot with LastIncludedIndex: %d", args.LastIncludedIndex)
 	if args.Term < rf.currentTerm {
@@ -55,10 +55,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		}
 	} else {
 		rf.logs = []entry{{nil, args.LastIncludedTerm, args.LastIncludedIndex}}
-	}
-	if rf.lastApplied < args.LastIncludedIndex {
-		rf.lastApplied = args.LastIncludedIndex
-		toBeApplied = true
 	}
 	if rf.commitIndex < args.LastIncludedIndex {
 		DPrintf2(rf, "InstallSnapshot: Update commit index to %d", args.LastIncludedIndex)

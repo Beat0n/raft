@@ -41,6 +41,20 @@ func (rf *Raft) applier() {
 		time.Sleep(ApplyFreq)
 		var applyMsg []ApplyMsg
 		rf.mu.Lock()
+		if rf.lastApplied < rf.lastIncluded() {
+			DPrintf2(rf, "apply snapshot[%d]", rf.lastIncluded())
+			applyMsg = append(applyMsg, ApplyMsg{
+				CommandValid:  false,
+				SnapshotValid: true,
+				Snapshot:      rf.persister.ReadSnapshot(),
+				SnapshotIndex: rf.logs[0].Index,
+				SnapshotTerm:  rf.logs[0].Term,
+			})
+			rf.lastApplied = rf.lastIncluded()
+			if rf.lastApplied > rf.commitIndex {
+				panic("error when apply")
+			}
+		}
 		for rf.lastApplied < rf.commitIndex {
 			rf.lastApplied++
 			log := &rf.logs[rf.lastApplied-rf.lastIncluded()]
