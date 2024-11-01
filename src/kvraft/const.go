@@ -2,7 +2,7 @@ package kvraft
 
 import "time"
 
-const Debug = true
+const Debug = false
 
 const (
 	PUT    = "Put"
