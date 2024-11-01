@@ -42,25 +42,15 @@ func (rf *Raft) applier() {
 		var applyMsg []ApplyMsg
 		rf.mu.Lock()
 		for rf.lastApplied < rf.commitIndex {
-			if rf.lastIncluded() > rf.lastApplied {
-				applyMsg = append(applyMsg, ApplyMsg{
-					SnapshotValid: true,
-					SnapshotIndex: rf.lastIncluded(),
-					SnapshotTerm:  rf.logs[0].Term,
-					Snapshot:      rf.persister.snapshot,
-				})
-				rf.lastApplied = rf.lastIncluded()
-			} else {
-				rf.lastApplied++
-				log := &rf.logs[rf.lastApplied-rf.lastIncluded()]
-				DPrintf2(rf, "apply log[%d], command is %v\n", rf.lastApplied, log.Command)
-				applyMsg = append(applyMsg, ApplyMsg{
-					CommandValid: true,
-					Command:      log.Command,
-					CommandIndex: log.Index,
-					CommandTerm:  log.Term,
-				})
-			}
+			rf.lastApplied++
+			log := &rf.logs[rf.lastApplied-rf.lastIncluded()]
+			DPrintf2(rf, "apply log[%d], command is %v\n", rf.lastApplied, log.Command)
+			applyMsg = append(applyMsg, ApplyMsg{
+				CommandValid: true,
+				Command:      log.Command,
+				CommandIndex: log.Index,
+				CommandTerm:  log.Term,
+			})
 		}
 		rf.mu.Unlock()
 		for _, msg := range applyMsg {

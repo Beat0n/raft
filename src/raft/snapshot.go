@@ -19,6 +19,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		reply.Term = rf.currentTerm
 		reply.LastIncludedIndex = rf.lastIncluded()
 		if toBeApplied {
+			DPrintf2(rf, "applying snapshot... | LastIncludedIndex: %d", args.LastIncludedIndex)
 			rf.applyCh <- ApplyMsg{
 				SnapshotValid: true,
 				SnapshotIndex: args.LastIncludedIndex,
