@@ -137,6 +137,10 @@ func (rf *Raft) lastLog() *entry {
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply, done *bool) {
+	if rf.role != Leader {
+		*done = true
+		return
+	}
 	if !rf.sendRPC(server, "Raft.AppendEntries", args, reply) {
 		return
 	}

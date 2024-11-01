@@ -117,6 +117,9 @@ func (rf *Raft) lastIncluded() int {
 }
 
 func (rf *Raft) sendSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	if rf.role != Leader {
+		return
+	}
 	DPrintf2(rf, "send snapshot to %s with LastIncludedIndex: %d, data bytes: %d", ServerName(server, Follower), args.LastIncludedIndex, len(args.Data))
 	if !rf.sendRPC(server, "Raft.InstallSnapshot", args, reply) {
 		return
