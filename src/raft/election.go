@@ -7,6 +7,7 @@ type votes struct {
 }
 
 func (rf *Raft) startElection() {
+	DPrintf2(rf, "start election")
 	rf.resetElectionTime()
 	rf.role = Candidate
 	rf.votedFor = rf.me // Vote for self
@@ -25,7 +26,6 @@ func (rf *Raft) startElection() {
 		LastLogIndex: lastLog.Index,
 		LastLogTerm:  lastLog.Term,
 	}
-	DPrintf2(rf, "start election")
 	// Send RequestVote RPCs to all other servers
 	for server := range rf.peers {
 		if server == rf.me {

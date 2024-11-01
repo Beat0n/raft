@@ -20,7 +20,6 @@ package raft
 import (
 	"6.5840/labgob"
 	"bytes"
-	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -201,7 +200,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
-	rand.Seed(int64(me))
+	//rand.Seed(int64(me))
 	rf.applyCh = applyCh
 	rf.heartBeatTime = HeartBeatTime
 	rf.logs = make([]entry, 1)

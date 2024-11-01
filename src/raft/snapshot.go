@@ -51,9 +51,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		} else {
 			rf.shrinkLogs(args.LastIncludedIndex - rf.lastIncluded() + 1)
 			rf.logs[0].Term = args.LastIncludedTerm
-			if rf.lastIncluded() != args.LastIncludedIndex {
-				panic("not the same LastIncludedIndex")
-			}
 		}
 	} else {
 		rf.logs = []entry{{nil, args.LastIncludedTerm, args.LastIncludedIndex}}
