@@ -8,3 +8,4 @@ src/raft/tester
 src/raft/test-*.log
 src/raft/test-*.err
 src/raft/*.txt
+src/kvraft/*.txt

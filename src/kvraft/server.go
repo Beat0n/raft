@@ -78,6 +78,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.lastAppliedIndex = 0
 	kv.readSnapshot(kv.rf.GetPersister().ReadSnapshot())
 	//kv.logCommit("StartKVServer, Max Log Index[%d]", kv.lastAppliedIndex)
+	DPrintf("StartKVServer[%d], Max Log Index[%d]", kv.me, kv.lastAppliedIndex)
 
 	// You may need initialization code here.
 	go kv.applier()
@@ -92,6 +93,7 @@ func (kv *KVServer) applier() {
 			index := msg.CommandIndex
 			term := msg.CommandTerm
 			kv.lastAppliedIndex = index
+			DPrintf("{Server %d} commit log[%d] (request[%d] from {Client %d}) | %s Key: %s Value: %s", kv.me, index, op.RequestId, op.ClientId, op.OpType, op.Key, op.Value)
 			//kv.logCommit("Commit Log[%d]", index)
 			kv.processOp(&op, index, term)
 			if kv.maxraftstate != -1 && 10*kv.rf.GetPersister().RaftStateSize() > 8*kv.maxraftstate {
@@ -157,8 +159,6 @@ func (kv *KVServer) processOp(op *Op, index, term int) {
 			opResult.Err = ErrNoKey
 		}
 		kv.clients[op.ClientId] = op.RequestId
-		//DPrintf("{Server %d} commit log[%d] (request[%d] from {Client %d}) | Get Key: %s | Now Value is %s", kv.me, index, op.RequestId, op.ClientId, op.Key, kv.database[op.Key])
-		DPrintf("{Server %d} commit log[%d] (request[%d] from {Client %d}) | Get Key: %s", kv.me, index, op.RequestId, op.ClientId, op.Key)
 	} else if op.OpType == PUT || op.OpType == APPEND {
 		if !kv.isOpExecuted(op.ClientId, op.RequestId) {
 			if op.OpType == PUT {
@@ -167,8 +167,6 @@ func (kv *KVServer) processOp(op *Op, index, term int) {
 				kv.database[op.Key] += op.Value
 			}
 			kv.clients[op.ClientId] = op.RequestId
-			//DPrintf("{Server %d} commit log[%d] (request[%d] from {Client %d}) | %s Key: %s Value: %s | Now Value is %s", kv.me, index, op.RequestId, op.ClientId, op.OpType, op.Key, op.Value, kv.database[op.Key])
-			DPrintf("{Server %d} commit log[%d] (request[%d] from {Client %d}) | %s Key: %s Value: %s", kv.me, index, op.RequestId, op.ClientId, op.OpType, op.Key, op.Value)
 		} else {
 			DPrintf("{Server %d} Duplicate request[%d] from {Client %d} | %s Key: %s Value: %s", kv.me, op.RequestId, op.ClientId, op.OpType, op.Key, op.Value)
 			opResult.Err = ErrDupReq
@@ -212,7 +210,7 @@ func (kv *KVServer) waitForCommit(op *Op, index, term int, ch chan *OpResult) (E
 	var value string
 
 	select {
-	case <-time.After(CommitTimerTime):
+	case <-time.NewTimer(CommitTimerTime).C:
 		err = ErrCommitTimeout
 		break
 	case result := <-ch:

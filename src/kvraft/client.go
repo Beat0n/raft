@@ -68,7 +68,7 @@ func (ck *Clerk) Command(key, value, op string) string {
 		ok = ck.servers[ck.leaderId].Call("KVServer.Command", &args, &reply)
 
 		if ok {
-			DPrintf("{Client %d} send RPC[%d] to {Server %d} success! | reply: %v", ck.selfId, args.RequestId, ck.leaderId, reply.Err)
+			DPrintf("{Client %d} send RPC[%d] to {Server %d} success! | reply: %v, value: %v", ck.selfId, args.RequestId, ck.leaderId, reply.Err, reply.Value)
 			switch reply.Err {
 			case OK:
 				ret = reply.Value

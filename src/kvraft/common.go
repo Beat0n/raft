@@ -73,5 +73,5 @@ type CommandReply struct {
 }
 
 func hash(index, term int) int64 {
-	return int64(index<<31 + term)
+	return int64(index<<31) + int64(term)
 }
